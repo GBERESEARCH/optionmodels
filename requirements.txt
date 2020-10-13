@@ -1,0 +1,7 @@
+# Needed packages / versions
+numpy
+scipy
+
+
+
+
