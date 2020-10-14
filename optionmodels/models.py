@@ -7,11 +7,11 @@ from functools import reduce
 from scipy.stats import norm
 
 
-df_dict = {'df_S':100, 
+df_dict = {'df_S':100,
+           'df_F':100,
            'df_K':100,
            'df_T':0.25,
            'df_r':0.05,
-           'df_b':0.05,
            'df_q':0,
            'df_sigma':0.2,
            'df_option':'call',
@@ -19,24 +19,95 @@ df_dict = {'df_S':100,
            'df_nodes':100,
            'df_vvol':0.5,
            'df_simulations':10000,
-           'df_output_flag':'Price',
+           'df_output_flag':'price',
            'df_american':False,
-           'df_step':10,
-           'df_state':10,
-           'df_skew':0.0004}
+           'df_step':5,
+           'df_state':5,
+           'df_skew':0.0004,
+           'df_cm':5.0,
+           'df_epsilon':0.0001,
+           'df_refresh':True,
+           'df_params_list':['S', 'K', 'T', 'r', 'q', 'sigma', 'option', 'steps', 
+                             'nodes', 'vvol', 'simulations', 'output_flag', 'american', 
+                             'step', 'state', 'skew', 'cm', 'epsilon']}
+
 
 class Pricer():
     
-    def __init__(self, S=df_dict['df_S'], K=df_dict['df_K'], T=df_dict['df_T'], r=df_dict['df_r'], 
+    def __init__(self, S=df_dict['df_S'], F=df_dict['df_F'], K=df_dict['df_K'], T=df_dict['df_T'], r=df_dict['df_r'], 
              q=df_dict['df_q'], sigma=df_dict['df_sigma'], option=df_dict['df_option'], 
              steps=df_dict['df_steps'], nodes=df_dict['df_nodes'], vvol=df_dict['df_vvol'], 
              simulations=df_dict['df_simulations'], output_flag=df_dict['df_output_flag'], 
              american=df_dict['df_american'], step=df_dict['df_step'], state=df_dict['df_state'], 
-             skew=df_dict['df_skew']):
+             skew=df_dict['df_skew'], cm=df_dict['df_cm'], epsilon=df_dict['df_epsilon'], 
+             refresh=df_dict['df_refresh'], df_params_list=df_dict['df_params_list'], 
+             df_dict=df_dict):
         
-        #self.S = S # Spot price
-        #self.K = K # Strike price
-        pass
+        self.S = S # Spot price
+        self.F = F # Forward price
+        self.K = K # Strike price
+        self.T = T # Time to maturity
+        self.r = r # Interest rate
+        self.q = q # Dividend Yield 
+        self.b = self.r - self.q # Cost of carry
+        self.sigma = sigma # Volatility
+        self.option = option # Option type, call or put
+        self.steps = steps # Number of time steps.
+        self.nodes = nodes # Number of price steps.
+        self.vvol = vvol # Vol of vol.
+        self.simulations = simulations # Number of Monte Carlo runs.
+        self.output_flag = output_flag # Output to return from method
+        self.american = american # Whether the option is American.
+        self.step = step # Time step used for Arrow Debreu price at single node.
+        self.state = state # State position used for Arrow Debreu price at single node.
+        self.skew = skew # Rate at which volatility increases (decreases) for every one point decrease 
+                         # (increase) in the strike price.
+        self.cm = cm # Option price used to solve for vol.
+        self.epsilon = epsilon # Degree of precision for implied vol
+        self.refresh = refresh # Whether to refresh parameters, set to False if called from another function
+        self.df_params_list = df_params_list # List of default parameters
+        self.df_dict = df_dict # Dictionary of default parameters
+        
+    
+    def _refresh_params(self, **kwargs):
+        """
+        Set parameters for use in various pricing functions
+
+        Parameters
+        ----------
+        **kwargs : Various
+                   Takes any of the arguments of the various methods that use it to refresh data.
+
+        Returns
+        -------
+        Various
+            Runs methods to fix input parameters and reset defaults if no data provided
+
+        """
+        
+        # For all the supplied arguments
+        for k, v in kwargs.items():
+            
+            # If a value for a parameter has not been provided
+            if v is None:
+                
+                # Set it to the default value and assign to the object
+                v = df_dict['df_'+str(k)]
+                self.__dict__[k] = v
+            
+            # If the value has been provided as an input, assign this to the object
+            else:
+                self.__dict__[k] = v
+        
+        # For each parameter in the list of parameters to be updated that was not supplied as a kwarg 
+        for key in list(set(self.df_params_list) - set(kwargs.keys())):
+            if key not in kwargs:
+                
+                # Set it to the default value and assign to the object
+                val = df_dict['df_'+str(key)]
+                self.__dict__[key] = val
+                
+        return self        
     
     
     def _n_choose_r(self, n, r):
@@ -72,24 +143,25 @@ class Pricer():
         return numer // denom  # or / in Python 2
 
 
-    def black_scholes_merton(self, S, K, T, r, q, sigma, option='call'):
+    def black_scholes_merton(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
+                             option=None):
         """
         Black-Scholes-Merton Option price 
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
 
@@ -99,11 +171,12 @@ class Pricer():
             Option Price.
 
         """
+        if self.refresh == True:
+            self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, option=option)
         
-        b = r - q
-        carry = np.exp((b - r) * T)
-        d1 = (np.log(S / K) + (b + (0.5 * sigma ** 2)) * T) / (sigma * np.sqrt(T))
-        d2 = (np.log(S / K) + (b - (0.5 * sigma ** 2)) * T) / (sigma * np.sqrt(T))
+        carry = np.exp((self.b - self.r) * self.T)
+        d1 = (np.log(self.S / self.K) + (self.b + (0.5 * self.sigma ** 2)) * self.T) / (self.sigma * np.sqrt(self.T))
+        d2 = (np.log(self.S / self.K) + (self.b - (0.5 * self.sigma ** 2)) * self.T) / (self.sigma * np.sqrt(self.T))
           
         # Cumulative normal distribution function
         Nd1 = si.norm.cdf(d1, 0.0, 1.0)
@@ -111,34 +184,35 @@ class Pricer():
         Nd2 = si.norm.cdf(d2, 0.0, 1.0)
         minusNd2 = si.norm.cdf(-d2, 0.0, 1.0)
                
-        if option == "call":
-            opt_price = ((S * carry * Nd1) - 
-                              (K * np.exp(-r * T) * Nd2))  
-        if option == 'put':
-            opt_price = ((K * np.exp(-r * T) * minusNd2) - 
-                              (S * carry * minusNd1))
+        if self.option == "call":
+            opt_price = ((self.S * carry * Nd1) - 
+                              (self.K * np.exp(-self.r * self.T) * Nd2))  
+        if self.option == 'put':
+            opt_price = ((self.K * np.exp(-self.r * self.T) * minusNd2) - 
+                              (self.S * carry * minusNd1))
                
         return opt_price
     
     
-    def black_scholes_merton_vega(self, S, K, T, r, q, sigma, option='call'):
+    def black_scholes_merton_vega(self, S=None, K=None, T=None, r=None, q=None, 
+                                  sigma=None, option=None):
         """
         Black-Scholes-Merton Option Vega 
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
 
@@ -148,18 +222,19 @@ class Pricer():
             Option Vega.
 
         """  
-        
-        b = r - q
-        carry = np.exp((b - r) * T)
-        d1 = (np.log(S / K) + (b + (0.5 * sigma ** 2)) * T) / (sigma * np.sqrt(T))
+        if self.refresh == True:
+            self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, option=option)
+
+        carry = np.exp((self.b - self.r) * self.T)
+        d1 = (np.log(self.S / self.K) + (self.b + (0.5 * self.sigma ** 2)) * self.T) / (self.sigma * np.sqrt(self.T))
         nd1 = (1 / np.sqrt(2 * np.pi)) * (np.exp(-d1 ** 2 * 0.5))
         
-        opt_vega = S * carry * nd1 * np.sqrt(T)
+        opt_vega = self.S * carry * nd1 * np.sqrt(self.T)
          
         return opt_vega
     
     
-    def black_76(self, F, K, T, r, q, sigma, option='call'):
+    def black_76(self, F=None, K=None, T=None, r=None, q=None, sigma=None, option=None):
         """
         Black 76 Futures Option price 
 
@@ -168,15 +243,15 @@ class Pricer():
         F : Float
             Discounted Futures Price.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
 
@@ -187,9 +262,11 @@ class Pricer():
 
         """
         
-        carry = np.exp(-r * T)
-        d1 = (np.log(F / K) + (0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-        d2 = (np.log(F / K) + (-0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        self._refresh_params(F=F, K=K, T=T, r=r, q=q, sigma=sigma, option=option)
+        
+        carry = np.exp(-self.r * self.T)
+        d1 = (np.log(self.F / self.K) + (0.5 * self.sigma ** 2) * self.T) / (self.sigma * np.sqrt(self.T))
+        d2 = (np.log(self.F / self.K) + (-0.5 * self.sigma ** 2) * self.T) / (self.sigma * np.sqrt(self.T))
           
         # Cumulative normal distribution function
         Nd1 = si.norm.cdf(d1, 0.0, 1.0)
@@ -197,34 +274,35 @@ class Pricer():
         Nd2 = si.norm.cdf(d2, 0.0, 1.0)
         minusNd2 = si.norm.cdf(-d2, 0.0, 1.0)
                
-        if option == "call":
-            opt_price = ((F * carry * Nd1) - 
-                              (K * np.exp(-r * T) * Nd2))  
-        if option == 'put':
-            opt_price = ((K * np.exp(-r * T) * minusNd2) - 
-                              (F * carry * minusNd1))
+        if self.option == "call":
+            opt_price = ((self.F * carry * Nd1) - 
+                              (self.K * np.exp(-self.r * self.T) * Nd2))  
+        if self.option == 'put':
+            opt_price = ((self.K * np.exp(-self.r * self.T) * minusNd2) - 
+                              (self.F * carry * minusNd1))
                
         return opt_price
     
     
-    def european_binomial(self, S, K, T, r, q, sigma, steps, option='call'):
+    def european_binomial(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
+                          steps=None, option=None):
         """
         European Binomial Option price.
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         steps : Int
             Number of time steps.
         option : Str
@@ -237,45 +315,49 @@ class Pricer():
 
         """
         
-        dt = T / steps
-        b = r - q
-        u = np.exp(sigma * np.sqrt(dt))
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
+                             option=option)
+        
+        dt = self.T / self.steps
+        u = np.exp(self.sigma * np.sqrt(dt))
         d = 1 / u
-        p = (np.exp(b * dt) - d) / (u - d)
-        a = int(np.log(K / (S * (d**steps))) / np.log(u / d)) + 1
+        p = (np.exp(self.b * dt) - d) / (u - d)
+        a = int(np.log(self.K / (self.S * (d ** self.steps))) / np.log(u / d)) + 1
         
         val = 0
         
-        if option == 'call':
-            for j in range(a, steps + 1):
-                val = val + (self._n_choose_r(steps, j) * (p ** j) * ((1 - p) ** (steps - j)) * 
-                             ((S * (u ** j) * (d ** (steps - j))) - K))
-        if option == 'put':
+        if self.option == 'call':
+            for j in range(a, self.steps + 1):
+                val = val + (self._n_choose_r(self.steps, j) * (p ** j) * ((1 - p) ** (self.steps - j)) * 
+                             ((self.S * (u ** j) * (d ** (self.steps - j))) - self.K))
+        if self.option == 'put':
             for j in range(0, a):
-                val = val + (self._n_choose_r(steps, j) * (p ** j) * ((1 - p) ** (steps - j)) * 
-                             (K - ((S * (u ** j)) * (d ** (steps - j)))))
+                val = val + (self._n_choose_r(self.steps, j) * (p ** j) * ((1 - p) ** (self.steps - j)) * 
+                             (self.K - ((self.S * (u ** j)) * (d ** (self.steps - j)))))
                                
-        return np.exp(-r * T) * val                     
+        return np.exp(-self.r * self.T) * val                     
                 
     
-    def cox_ross_rubinstein_binomial(self, S, K, T, r, q, sigma, steps, option='call', output_flag='price', american=False):
+    def cox_ross_rubinstein_binomial(self, S=None, K=None, T=None, r=None, q=None, 
+                                     sigma=None, steps=None, option=None, output_flag=None, 
+                                     american=None):
         """
         Cox-Ross-Rubinstein Binomial model
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         steps : Int
             Number of time steps.
         option : Str
@@ -297,52 +379,54 @@ class Pricer():
 
         """
         
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
+                             option=option, output_flag=output_flag, american=american)
+                
         z = 1
-        if option == 'put':
+        if self.option == 'put':
             z = -1
         
-        dt = T / steps
-        b = r - q
-        u = np.exp(sigma * np.sqrt(dt))
+        dt = self.T / self.steps
+        u = np.exp(self.sigma * np.sqrt(dt))
         d = 1 / u
-        p = (np.exp(b * dt) - d) / (u - d)
-        df = np.exp(-r * dt)
+        p = (np.exp(self.b * dt) - d) / (u - d)
+        df = np.exp(-self.r * dt)
         optionvalue = {}
         returnvalue = {}
         
-        for i in range(steps + 1):
-            optionvalue[i] = max(0, z * (S * (u ** i) * (d ** (steps - i)) - K))
+        for i in range(self.steps + 1):
+            optionvalue[i] = max(0, z * (self.S * (u ** i) * (d ** (self.steps - i)) - self.K))
             
             
-        for j in range(steps - 1, -1, -1):
+        for j in range(self.steps - 1, -1, -1):
             for i in range(j + 1):
-                if american == True:
+                if self.american == True:
                     optionvalue[i] = ((p * optionvalue[i + 1]) + ((1 - p) * optionvalue[i])) * df
-                if american == False:
-                    optionvalue[i] = max((z * (S * (u ** i) * (d ** (j - i)) - K)),  
+                if self.american == False:
+                    optionvalue[i] = max((z * (self.S * (u ** i) * (d ** (j - i)) - self.K)),  
                                          ((p * optionvalue[i + 1]) + ((1 - p) * optionvalue[i])) * df)
             
             if j == 2:
                 returnvalue[2] = ((optionvalue[2] - optionvalue[1]) / 
-                                  (S * (u ** 2) - S) - (optionvalue[1] - optionvalue[0]) / 
-                                   (S - S * (d ** 2))) / (0.5 * (S * (u ** 2) - S * (d ** 2)))
+                                  (self.S * (u ** 2) - self.S) - (optionvalue[1] - optionvalue[0]) / 
+                                   (self.S - self.S * (d ** 2))) / (0.5 * (self.S * (u ** 2) - self.S * (d ** 2)))
                 returnvalue[3] = optionvalue[1]
                 
             if j == 1:
-                returnvalue[1] = (optionvalue[1] - optionvalue[0]) / (S * u - S * d)
+                returnvalue[1] = (optionvalue[1] - optionvalue[0]) / (self.S * u - self.S * d)
             
         returnvalue[3] = (returnvalue[3] - optionvalue[0]) / (2 * dt) / 365
         returnvalue[0] = optionvalue[0]
         
-        if output_flag == 'price':
+        if self.output_flag == 'price':
             result = returnvalue[0]
-        if output_flag == 'delta':
+        if self.output_flag == 'delta':
             result = returnvalue[1]
-        if output_flag == 'gamma':
+        if self.output_flag == 'gamma':
             result = returnvalue[2]
-        if output_flag == 'theta':
+        if self.output_flag == 'theta':
             result = returnvalue[3]
-        if output_flag == 'all':
+        if self.output_flag == 'all':
             result = ('Price = '+str(returnvalue[0]),
                       'Delta = '+str(returnvalue[1]),
                       'Gamma = '+str(returnvalue[2]),
@@ -351,24 +435,26 @@ class Pricer():
         return result
     
     
-    def leisen_reimer_binomial(self, S, K, T, r, q, sigma, steps, option='call', output_flag='price', american=False):
+    def leisen_reimer_binomial(self, S=None, K=None, T=None, r=None, q=None, 
+                                     sigma=None, steps=None, option=None, output_flag=None, 
+                                     american=None):
         """
         Leisen Reimer Binomial
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         steps : Int
             Number of time steps.
         option : Str
@@ -389,54 +475,60 @@ class Pricer():
 
         """
          
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
+                             option=option, output_flag=output_flag, american=american)
+        
         z = 1
-        if option == 'put':
+        if self.option == 'put':
             z = -1
         
-        b = r - q
-        d1 = (np.log(S / K) + (b + (0.5 * sigma ** 2)) * T) / (sigma * np.sqrt(T))
-        d2 = (np.log(S / K) + (b - (0.5 * sigma ** 2)) * T) / (sigma * np.sqrt(T))
-        hd1 = 0.5 + np.sign(d1) * (0.25 - 0.25 * np.exp(-(d1 / (steps + 1 / 3 + 0.1 / (steps + 1))) ** 2 * (steps + 1 / 6))) ** (0.5)
-        hd2 = 0.5 + np.sign(d2) * (0.25 - 0.25 * np.exp(-(d2 / (steps + 1 / 3 + 0.1 / (steps + 1))) ** 2 * (steps + 1 / 6))) ** (0.5)
+        d1 = ((np.log(self.S / self.K) + (self.b + (0.5 * self.sigma ** 2)) * self.T) / 
+              (self.sigma * np.sqrt(self.T)))
+        d2 = ((np.log(self.S / self.K) + (self.b - (0.5 * self.sigma ** 2)) * self.T) / 
+              (self.sigma * np.sqrt(self.T)))
+        hd1 = (0.5 + np.sign(d1) * (0.25 - 0.25 * np.exp(-(d1 / (self.steps + 1 / 3 + 
+               0.1 / (self.steps + 1))) ** 2 * (self.steps + 1 / 6))) ** (0.5))
+        hd2 = (0.5 + np.sign(d2) * (0.25 - 0.25 * np.exp(-(d2 / (self.steps + 1 / 3 + 
+               0.1 / (self.steps + 1))) ** 2 * (self.steps + 1 / 6))) ** (0.5))
         
-        dt = T / steps
+        dt = self.T / self.steps
         p = hd2
-        u = np.exp(b * dt) * hd1 / hd2
-        d = (np.exp(b * dt) - p * u) / (1 - p)
-        df = np.exp(-r * dt)
+        u = np.exp(self.b * dt) * hd1 / hd2
+        d = (np.exp(self.b * dt) - p * u) / (1 - p)
+        df = np.exp(-self.r * dt)
     
         optionvalue = {}
         returnvalue = {}
         
-        for i in range(steps + 1):
-            optionvalue[i] = max(0, z * (S * (u ** i) * (d ** (steps - i)) - K))
+        for i in range(self.steps + 1):
+            optionvalue[i] = max(0, z * (self.S * (u ** i) * (d ** (self.steps - i)) - self.K))
             
-        for j in range(steps - 1, -1, -1):
+        for j in range(self.steps - 1, -1, -1):
             for i in range(j + 1):
-                if american == True:
+                if self.american == True:
                     optionvalue[i] = ((p * optionvalue[i + 1]) + ((1 - p) * optionvalue[i])) * df
-                if american == False:
-                    optionvalue[i] = max((z * (S * (u ** i) * (d ** (j - i)) - K)),  
+                if self.american == False:
+                    optionvalue[i] = max((z * (self.S * (u ** i) * (d ** (j - i)) - self.K)),  
                                          ((p * optionvalue[i + 1]) + ((1 - p) * optionvalue[i])) * df)
                     
             if j == 2:
                 returnvalue[2] = ((optionvalue[2] - optionvalue[1]) / 
-                                  (S * (u ** 2) - S * u * d) - (optionvalue[1] - optionvalue[0]) / 
-                                   (S * u * d - S * (d ** 2))) / (0.5 * (S * (u ** 2) - S * (d ** 2)))
+                                  (self.S * (u ** 2) - self.S * u * d) - (optionvalue[1] - optionvalue[0]) / 
+                                   (self.S * u * d - self.S * (d ** 2))) / (0.5 * (self.S * (u ** 2) - self.S * (d ** 2)))
                 returnvalue[3] = optionvalue[1]
                 
             if j == 1:
-                returnvalue[1] = (optionvalue[1] - optionvalue[0]) / (S * u - S * d)
+                returnvalue[1] = (optionvalue[1] - optionvalue[0]) / (self.S * u - self.S * d)
             
         returnvalue[0] = optionvalue[0]
         
-        if output_flag == 'price':
+        if self.output_flag == 'price':
             result = returnvalue[0]
-        if output_flag == 'delta':
+        if self.output_flag == 'delta':
             result = returnvalue[1]
-        if output_flag == 'gamma':
+        if self.output_flag == 'gamma':
             result = returnvalue[2]
-        if output_flag == 'all':
+        if self.output_flag == 'all':
             result = ('Price = '+str(returnvalue[0]),
                       'Delta = '+str(returnvalue[1]),
                       'Gamma = '+str(returnvalue[2]))
@@ -444,28 +536,29 @@ class Pricer():
         return result        
     
     
-    def trinomial_tree(self, S, K, T, r, q, sigma, steps, option='call', output_flag='price', american=False):
+    def trinomial_tree(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
+                       steps=None, option=None, output_flag=None, american=None):
         """
         Trinomial Tree
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         steps : Int
-            Number of time steps.
+            Number of time steps. The default is 10. 
         option : Str
-            Type of option. 'put' or 'call'. The default is 'call'.
+            Type of option, 'put' or 'call'. The default is 'call'.
         output_flag : Str
             Whether to return 'price', 'delta', 'gamma', 'theta' or 'all'. The default is 'price'.
         american : Bool
@@ -482,55 +575,59 @@ class Pricer():
                 'all' : Tuple; Option Price, Option Delta, Option Gamma, Option Theta  
 
         """
+        
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
+                             option=option, output_flag=output_flag, american=american)
                 
         z = 1
-        if option == 'put':
+        if self.option == 'put':
             z = -1
         
-        dt = T / steps
-        b = r - q
-        u = np.exp(sigma * np.sqrt(2 * dt))
-        d = np.exp(-sigma * np.sqrt(2 * dt))
-        pu = ((np.exp(b * dt / 2) - np.exp(-sigma * np.sqrt(dt / 2))) / 
-              (np.exp(sigma * np.sqrt(dt / 2)) - np.exp(-sigma * np.sqrt(dt / 2)))) ** 2
-        pd = ((np.exp(sigma * np.sqrt(dt / 2)) - np.exp(b * dt / 2)) / 
-              (np.exp(sigma * np.sqrt(dt / 2)) - np.exp(-sigma * np.sqrt(dt / 2)))) ** 2
+        dt = self.T / self.steps
+        u = np.exp(self.sigma * np.sqrt(2 * dt))
+        d = np.exp(-self.sigma * np.sqrt(2 * dt))
+        pu = ((np.exp(self.b * dt / 2) - np.exp(-self.sigma * np.sqrt(dt / 2))) / 
+              (np.exp(self.sigma * np.sqrt(dt / 2)) - np.exp(-self.sigma * np.sqrt(dt / 2)))) ** 2
+        pd = ((np.exp(self.sigma * np.sqrt(dt / 2)) - np.exp(self.b * dt / 2)) / 
+              (np.exp(self.sigma * np.sqrt(dt / 2)) - np.exp(-self.sigma * np.sqrt(dt / 2)))) ** 2
         pm = 1 - pu - pd
-        df = np.exp(-r * dt)
+        df = np.exp(-self.r * dt)
         optionvalue = {}
         returnvalue = {}
         
-        for i in range(2 * steps + 1):
-            optionvalue[i] = max(0, z * (S * (u ** max(i - steps, 0)) * (d ** (max((steps - i), 0))) - K))
+        for i in range(2 * self.steps + 1):
+            optionvalue[i] = max(0, z * (self.S * (u ** max(i - self.steps, 0)) * 
+                                         (d ** (max((self.steps - i), 0))) - self.K))
             
             
-        for j in range(steps - 1, -1, -1):
+        for j in range(self.steps - 1, -1, -1):
             for i in range(j * 2 + 1):
                 
                 optionvalue[i] = (pu * optionvalue[i + 2] + pm * optionvalue[i + 1] + pd * optionvalue[i]) * df
                 
-                if american == True:
-                    optionvalue[i] = max(z * (S * (u ** max(i - j, 0)) * (d ** (max((j - i), 0))) - K), optionvalue[i])
+                if self.american == True:
+                    optionvalue[i] = max(z * (self.S * (u ** max(i - j, 0)) * 
+                                              (d ** (max((j - i), 0))) - self.K), optionvalue[i])
             
             if j == 1:
-                returnvalue[1] = (optionvalue[2] - optionvalue[0]) / (S * u - S * d)
+                returnvalue[1] = (optionvalue[2] - optionvalue[0]) / (self.S * u - self.S * d)
                 returnvalue[2] = ((optionvalue[2] - optionvalue[1]) / 
-                                  (S * u - S) - (optionvalue[1] - optionvalue[0]) / 
-                                   (S - S * d )) / (0.5 * ((S * u) - (S * d)))                              
+                                  (self.S * u - self.S) - (optionvalue[1] - optionvalue[0]) / 
+                                   (self.S - self.S * d )) / (0.5 * ((self.S * u) - (self.S * d)))                              
                 returnvalue[3] = optionvalue[0]
                 
         #returnvalue[3] = (returnvalue[3] - optionvalue[0]) / dt / 365
         returnvalue[0] = optionvalue[0]
         
-        if output_flag == 'price':
+        if self.output_flag == 'price':
             result = returnvalue[0]
-        if output_flag == 'delta':
+        if self.output_flag == 'delta':
             result = returnvalue[1]
-        if output_flag == 'gamma':
+        if self.output_flag == 'gamma':
             result = returnvalue[2]
-        if output_flag == 'theta':
+        if self.output_flag == 'theta':
             result = returnvalue[3]
-        if output_flag == 'all':
+        if self.output_flag == 'all':
             result = ('Price = '+str(returnvalue[0]),
                       'Delta = '+str(returnvalue[1]),
                       'Gamma = '+str(returnvalue[2]),
@@ -539,27 +636,28 @@ class Pricer():
         return result                     
     
     
-    def implied_trinomial_tree(self, S, K, T, r, q, sigma, steps, option='call', output_flag='price', 
-                             step_n=3, state_i=2, skew=0.0004):
+    def implied_trinomial_tree(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
+                       steps=None, option=None, output_flag=None, step=None, state=None, 
+                       skew=None):
         """
         Implied Trinomial Tree
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         steps : Int
-            Number of time steps.
+            Number of time steps. The default is 10. 
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
         output_flag : Str
@@ -568,13 +666,13 @@ class Pricer():
             LVM: A matrix of implied local volatilities
             ADM: A matrix of Arrow-Debreu prices at a single node
             DPni: The implied down transition probability at a single node
-            ADni: The Arrow-Debreu price at a single node (at time step step_n and state state_n)
+            ADni: The Arrow-Debreu price at a single node (at time step - step and state - state)
             LVni: The local volatility at a single node
             price: The value of the European option
-        step_n : Int
-            Time step used for Arrow Debreu price at single node. The default is 3.
-        state_i : Int
-            State position used for Arrow Debreu price at single node. The default is 2.
+        step : Int
+            Time step used for Arrow Debreu price at single node. The default is 5.
+        state : Int
+            State position used for Arrow Debreu price at single node. The default is 5.
         skew : Float
             Rate at which volatility increases (decreases) for every one point decrease 
             (increase) in the strike price. The default is 0.0004.
@@ -588,56 +686,61 @@ class Pricer():
                 LVM: A matrix of implied local volatilities
                 ADM: A matrix of Arrow-Debreu prices at a single node
                 DPni: The implied down transition probability at a single node
-                ADni: The Arrow-Debreu price at a single node (at time step step_n and state state_n)
+                ADni: The Arrow-Debreu price at a single node (at time step - step and state - state)
                 LVni: The local volatility at a single node
                 price: The European option price.
 
         """
+        
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
+                             option=option, output_flag=output_flag, step=step, 
+                             state=state, skew=skew)
                 
         z = 1
-        if option == 'put':
+        if self.option == 'put':
             z = -1
         
-        optionvaluenode = np.zeros((steps * 2 + 1))
-        arrowdebreu = np.zeros((steps + 1, steps * 2 + 1), dtype='float')
-        upprob = np.zeros((steps, steps * 2 - 1), dtype='float')
-        downprob = np.zeros((steps, steps * 2 - 1), dtype='float')
-        localvol = np.zeros((steps, steps * 2 - 1), dtype='float')
+        optionvaluenode = np.zeros((self.steps * 2 + 1))
+        arrowdebreu = np.zeros((self.steps + 1, self.steps * 2 + 1), dtype='float')
+        upprob = np.zeros((self.steps, self.steps * 2 - 1), dtype='float')
+        downprob = np.zeros((self.steps, self.steps * 2 - 1), dtype='float')
+        localvol = np.zeros((self.steps, self.steps * 2 - 1), dtype='float')
         
-        dt = T / steps
-        b = r - q
-        u = np.exp(sigma * np.sqrt(2 * dt))
+        dt = self.T / self.steps
+        u = np.exp(self.sigma * np.sqrt(2 * dt))
         d = 1 / u
-        df = np.exp(-r * dt)
+        df = np.exp(-self.r * dt)
         arrowdebreu[0, 0] = 1 
                 
-        for n in range(steps):
+        for n in range(self.steps):
             for i in range(n * 2 + 1):
                 val = 0
-                Si1 = S * (u ** (max(i - n, 0))) * (d ** (max(n * 2 - n - i, 0)))
+                Si1 = self.S * (u ** (max(i - n, 0))) * (d ** (max(n * 2 - n - i, 0)))
                 Si = Si1 * d
                 Si2 = Si1 * u
-                Fi = Si1 * np.exp(b * dt)
-                sigmai = sigma + (S - Si1) * skew
+                Fi = Si1 * np.exp(self.b * dt)
+                sigmai = self.sigma + (self.S - Si1) * self.skew
                 if i < (n * 2) / 2 + 1:
                     for j in range(i):
-                        Fj = S * (u ** (max(j - n, 0))) * (d ** (max(n * 2 - n - j, 0))) * np.exp(b * dt)
+                        Fj = self.S * (u ** (max(j - n, 0))) * (d ** (max(n * 2 - n - j, 0))) * np.exp(self.b * dt)
                         val = val + arrowdebreu[n, j] * (Si1 - Fj)
                         
-                    optionvalue = self.tt(S=S, K=Si1, T=(n + 1)*dt, r=r, q=0, sigma=sigmai, n=n + 1, option='put', 
-                                                output_flag='price', american=False)
+                    optionvalue = self.trinomial_tree(S=self.S, K=Si1, T=(n + 1)*dt, r=self.r, 
+                                          q=0, sigma=sigmai, steps=n + 1, option='put', 
+                                          output_flag='price', american=False)
         
-                    qi = (np.exp(r * dt) * optionvalue - val) / (arrowdebreu[n, i] * (Si1 - Si))
+                    qi = (np.exp(self.r * dt) * optionvalue - val) / (arrowdebreu[n, i] * (Si1 - Si))
                     pi = (Fi + qi * (Si1 - Si) - Si1) / (Si2 - Si1)
                 else:
-                    optionvalue = self.tt(S=S, K=Si1, T=(n + 1) * dt, r=r, q=0, sigma=sigmai, n=n + 1, option='call', 
-                                                output_flag='price', american=False)
+                    optionvalue = self.trinomial_tree(S=self.S, K=Si1, T=(n + 1) * dt, r=self.r, 
+                                          q=0, sigma=sigmai, steps=n + 1, option='call', 
+                                          output_flag='price', american=False)
                     val = 0
                     for j in range(i + 1, n * 2 + 1):
-                        Fj = S * (u ** (max(j - n, 0))) * (d ** (max(n * 2 - n - j, 0))) * np.exp(b * dt)
+                        Fj = self.S * (u ** (max(j - n, 0))) * (d ** (max(n * 2 - n - j, 0))) * np.exp(self.b * dt)
                         val = val + arrowdebreu[n, j] * (Fj- Si1)
     
-                    pi = (np.exp(r * dt) * optionvalue - val) / (arrowdebreu[n, i] * (Si2 - Si1))
+                    pi = (np.exp(self.r * dt) * optionvalue - val) / (arrowdebreu[n, i] * (Si2 - Si1))
                     qi = (Fi - pi * (Si2 - Si1) - Si1) / (Si - Si1)
                 
                 # Replacing negative probabilities    
@@ -679,59 +782,61 @@ class Pricer():
                                              arrowdebreu[n, i - 1] * df + qi * arrowdebreu[n, i] * df)
     
     
-        if output_flag == 'DPM':
+        if self.output_flag == 'DPM':
             result = downprob
-        elif output_flag == 'UPM':    
+        elif self.output_flag == 'UPM':    
             result = upprob
-        elif output_flag == 'DPni':    
-            result = downprob[step_n, state_i]
-        elif output_flag == 'UPni':    
-            result = upprob[step_n, state_i]        
-        elif output_flag == 'ADM':    
+        elif self.output_flag == 'DPni':    
+            result = downprob[step, state]
+        elif self.output_flag == 'UPni':    
+            result = upprob[step, state]        
+        elif self.output_flag == 'ADM':    
             result = arrowdebreu
-        elif output_flag == 'LVM': 
+        elif self.output_flag == 'LVM': 
             result = localvol
-        elif output_flag == 'LVni':
-            result = localvol[step_n, state_i]
-        elif output_flag == 'ADni':    
-            result = arrowdebreu[step_n, state_i]
-        elif output_flag == 'Price':
+        elif self.output_flag == 'LVni':
+            result = localvol[step, state]
+        elif self.output_flag == 'ADni':    
+            result = arrowdebreu[step, state]
+        elif self.output_flag == 'price':
             
             # Calculation of option price using the implied trinomial tree
-            for i in range(2 * steps + 1):
-                optionvaluenode[i] = max(0, z * (S * (u ** max(i - steps, 0)) * (d ** (max((steps - i), 0))) - K))    
+            for i in range(2 * self.steps + 1):
+                optionvaluenode[i] = max(0, z * (self.S * (u ** max(i - self.steps, 0)) * 
+                                                 (d ** (max((self.steps - i), 0))) - self.K))    
     
-            for n in range(steps - 1, -1, -1):
+            for n in range(self.steps - 1, -1, -1):
                 for i in range(n * 2 + 1):
                     optionvaluenode[i] = ((upprob[n, i] * optionvaluenode[i + 2] + 
                                           (1 - upprob[n, i] - downprob[n, i]) * optionvaluenode[i + 1] + 
                                           downprob[n, i] * optionvaluenode[i]) * df)
     
-            result = optionvaluenode[0]         
+            result = optionvaluenode[0] * 1000000         
                                
         return result    
     
     
-    def explicit_finite_difference(self, S, K, T, r, q, sigma, nodes, option='call', american=False):
+    def explicit_finite_difference(self, S=None, K=None, T=None, r=None, q=None, 
+                                   sigma=None, nodes=None, option=None, american=None):
         """
         Explicit Finite Difference
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         nodes : Int
-            Value used to determine number of price and time steps.
+            Number of price steps. The default is 100.
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
         american : Bool
@@ -743,71 +848,75 @@ class Pricer():
             Option Price.
 
         """
-         
+        
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, nodes=nodes, 
+                             option=option, american=american)
+        
         z = 1
-        if option == 'put':
+        if self.option == 'put':
             z = -1
         
-        b = r - q    
-        dS = S / nodes
-        nodes = int(K / dS) * 2
-        St = np.zeros((nodes + 2), dtype='float')
+        dS = self.S / self.nodes
+        self.nodes = int(self.K / dS) * 2
+        St = np.zeros((self.nodes + 2), dtype='float')
         
-        SGridtPt = int(S / dS)
-        dt = (dS ** 2) / ((sigma ** 2) * 4 * (K ** 2))
-        N = int(T / dt) + 1
+        SGridtPt = int(self.S / dS)
+        dt = (dS ** 2) / ((self.sigma ** 2) * 4 * (self.K ** 2))
+        N = int(self.T / dt) + 1
         
-        C = np.zeros((N + 1, nodes + 2), dtype='float')
-        dt = T / N
-        Df = 1 / (1 + r * dt)
+        C = np.zeros((N + 1, self.nodes + 2), dtype='float')
+        dt = self.T / N
+        Df = 1 / (1 + self.r * dt)
           
-        for i in range(nodes + 1):
+        for i in range(self.nodes + 1):
             St[i] = i * dS # Asset price at maturity
-            C[N, i] = max(0, z * (St[i] - K) ) # At maturity
+            C[N, i] = max(0, z * (St[i] - self.K) ) # At maturity
             
         for j in range(N - 1, -1, -1):
-            for i in range(1, nodes):
-                pu = 0.5 * ((sigma ** 2) * (i ** 2) + b * i) * dt
-                pm = 1 - (sigma ** 2) * (i ** 2) * dt
-                pd = 0.5 * ((sigma ** 2) * (i ** 2) - b * i) * dt
+            for i in range(1, self.nodes):
+                pu = 0.5 * ((self.sigma ** 2) * (i ** 2) + self.b * i) * dt
+                pm = 1 - (self.sigma ** 2) * (i ** 2) * dt
+                pd = 0.5 * ((self.sigma ** 2) * (i ** 2) - self.b * i) * dt
                 C[j, i] = Df * (pu * C[j + 1, i + 1] + pm * C[j + 1, i] + pd * C[j + 1, i - 1])
-                if american == True:
-                    C[j, i] = max(z * (St[i] - K), C[j, i])
+                if self.american == True:
+                    C[j, i] = max(z * (St[i] - self.K), C[j, i])
                     
                 if z == 1: # Call option
                     C[j, 0] = 0
-                    C[j, nodes] = (St[i] - K)
+                    C[j, self.nodes] = (St[i] - self.K)
                 else:
-                    C[j, 0] = K
-                    C[j, nodes] = 0
+                    C[j, 0] = self.K
+                    C[j, self.nodes] = 0
         
         result = C[0, SGridtPt]
     
         return result          
     
     
-    def implicit_finite_difference(self, S, K, T, r, q, sigma, steps, nodes, option='call', american=False):
+    def implicit_finite_difference(self, S=None, K=None, T=None, r=None, q=None, 
+                                   sigma=None, steps=None, nodes=None, option=None, 
+                                   american=None):
         """
         Implicit Finite Difference
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         steps : Int
-            Number of time steps.
+            Number of time steps. The default is 10.
         nodes : Float
-            Number of price steps.
+            Number of price steps. The default is 100.
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
         american : Bool
@@ -820,71 +929,74 @@ class Pricer():
         
 
         """
-         
+        
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
+                             nodes=nodes, option=option, american=american)
+        
         z = 1
-        if option == 'put':
+        if self.option == 'put':
             z = -1
         
-        b = r - q    
-        
         # Make sure current asset price falls at grid point
-        dS = 2 * S / nodes
-        SGridtPt = int(S / dS)
-        nodes = int(K / dS) * 2
-        dt = T / steps
+        dS = 2 * self.S / self.nodes
+        SGridtPt = int(self.S / dS)
+        nodes = int(self.K / dS) * 2
+        dt = self.T / self.steps
         
-        CT = np.zeros(nodes + 1)
-        p = np.zeros((nodes + 1, nodes + 1), dtype='float')
+        CT = np.zeros(self.nodes + 1)
+        p = np.zeros((self.nodes + 1, self.nodes + 1), dtype='float')
         
-        for j in range(nodes + 1):
-            CT[j] = max(0, z * (j * dS - K)) # At maturity
-            for i in range(nodes + 1):
+        for j in range(self.nodes + 1):
+            CT[j] = max(0, z * (j * dS - self.K)) # At maturity
+            for i in range(self.nodes + 1):
                 p[j, i] = 0
                 
         p[0, 0] = 1
-        for i in range(1, nodes):
-            p[i, i - 1] = 0.5 * i * (b - (sigma ** 2) * i) * dt
-            p[i, i] = 1 + (r + (sigma ** 2) * (i ** 2)) * dt
-            p[i, i + 1] = 0.5 * i * (-b - (sigma ** 2) * i) * dt
+        for i in range(1, self.nodes):
+            p[i, i - 1] = 0.5 * i * (self.b - (self.sigma ** 2) * i) * dt
+            p[i, i] = 1 + (self.r + (self.sigma ** 2) * (i ** 2)) * dt
+            p[i, i + 1] = 0.5 * i * (-self.b - (self.sigma ** 2) * i) * dt
             
-        p[nodes, nodes] = 1
+        p[self.nodes, self.nodes] = 1
         
         C = np.matmul(np.linalg.inv(p), CT.T)
         
-        for j in range(steps - 1, 0, -1):
+        for j in range(self.steps - 1, 0, -1):
             C = np.matmul(np.linalg.inv(p), C)
             
-            if american == True: # American option
-                for i in range(1, nodes + 1):
-                    C[i] = max(float(C[i]), z * ((i - 1) * dS - K))
+            if self.american == True: # American option
+                for i in range(1, self.nodes + 1):
+                    C[i] = max(float(C[i]), z * ((i - 1) * dS - self.K))
                 
         result = C[SGridtPt + 1]
         
         return result   
     
     
-    def explicit_finite_difference_lns(self, S, K, T, r, q, sigma, steps, nodes, option='call', american=False):
+    def explicit_finite_difference_lns(self, S=None, K=None, T=None, r=None, q=None, 
+                                       sigma=None, steps=None, nodes=None, option=None, 
+                                       american=None):
         """
         Explicit Finite Differences - rewrite BS-PDE in terms of ln(S)
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         steps : Int
-            Number of time steps.
+            Number of time steps. The default is 10.
         nodes : Float
-            Number of price steps.
+            Number of price steps. The default is 100.
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
         american : Bool
@@ -896,63 +1008,65 @@ class Pricer():
             Option Price.
 
         """
+        
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
+                             nodes=nodes, option=option, american=american)
           
         z = 1
-        if option == 'put':
+        if self.option == 'put':
             z = -1
         
-        b = r - q    
-        
-        dt = T / steps
-        dx = sigma * np.sqrt(3 * dt)
-        pu = 0.5 * dt * (((sigma / dx) ** 2) + (b - (sigma ** 2) / 2) / dx)
-        pm = 1 - dt * ((sigma / dx) ** 2) - r * dt
-        pd = 0.5 * dt * (((sigma / dx) ** 2) - (b - (sigma ** 2) / 2) / dx)
+        dt = self.T / self.steps
+        dx = self.sigma * np.sqrt(3 * dt)
+        pu = 0.5 * dt * (((self.sigma / dx) ** 2) + (self.b - (self.sigma ** 2) / 2) / dx)
+        pm = 1 - dt * ((self.sigma / dx) ** 2) - self.r * dt
+        pd = 0.5 * dt * (((self.sigma / dx) ** 2) - (self.b - (self.sigma ** 2) / 2) / dx)
         St = {}
-        St[0] = S * np.exp(-nodes / 2 * dx)
-        C = np.zeros((int(nodes / 2) + 1, nodes + 2), dtype='float')
-        C[steps, 0] = max(0, z * (St[0] - K))
+        St[0] = self.S * np.exp(-self.nodes / 2 * dx)
+        C = np.zeros((int(self.nodes / 2) + 1, self.nodes + 2), dtype='float')
+        C[self.steps, 0] = max(0, z * (St[0] - self.K))
         
-        for i in range(1, nodes + 1):
+        for i in range(1, self.nodes + 1):
             St[i] = St[i - 1] * np.exp(dx) # Asset price at maturity
-            C[steps, i] = max(0, z * (St[i] - K) ) # At maturity
+            C[self.steps, i] = max(0, z * (St[i] - self.K) ) # At maturity
         
-        for j in range(steps - 1, -1, -1):
-            for i in range(1, nodes):
+        for j in range(self.steps - 1, -1, -1):
+            for i in range(1, self.nodes):
                 C[j, i] = pu * C[j + 1, i + 1] + pm * C[j + 1, i] + pd * C[j + 1, i - 1]
-                if american == True:
-                    C[j, i] = max(C[j, i], z * (St[i] - K))
+                if self.american == True:
+                    C[j, i] = max(C[j, i], z * (St[i] - self.K))
                     
-                C[j, nodes] = C[j, nodes - 1] + St[nodes] - St[nodes - 1] # Upper boundary
+                C[j, self.nodes] = C[j, self.nodes - 1] + St[self.nodes] - St[self.nodes - 1] # Upper boundary
                 C[j, 0] = C[j, 1] # Lower boundary
            
-        result = C[0, int(nodes / 2)]
+        result = C[0, int(self.nodes / 2)]
     
         return result   
     
    
-    def crank_nicolson(self, S, K, T, r, q, sigma, steps, nodes, option='call', american=False):
+    def crank_nicolson(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
+                       steps=None, nodes=None, option=None, american=None):
         """
         Crank Nicolson
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         steps : Int
-            Number of time steps.
+            Number of time steps. The default is 10.
         nodes : Float
-            Number of price steps.
+            Number of price steps. The default is 100.
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
         american : Bool
@@ -964,70 +1078,72 @@ class Pricer():
             Option Price.
 
         """
+        
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
+                             nodes=nodes, option=option, american=american)
                 
         z = 1
-        if option == 'put':
+        if self.option == 'put':
             z = -1
         
-        b = r - q    
-        
-        dt = T / steps
-        dx = sigma * np.sqrt(3 * dt)
-        pu = -0.25 * dt * (((sigma / dx) ** 2) + (b - (sigma ** 2) / 2) / dx)
-        pm = 1 + 0.5 * dt * ((sigma / dx) ** 2) + 0.5 * r * dt
-        pd = -0.25 * dt * (((sigma / dx) ** 2) - (b - (sigma ** 2) / 2) / dx)
+        dt = self.T / self.steps
+        dx = self.sigma * np.sqrt(3 * dt)
+        pu = -0.25 * dt * (((self.sigma / dx) ** 2) + (self.b - (self.sigma ** 2) / 2) / dx)
+        pm = 1 + 0.5 * dt * ((self.sigma / dx) ** 2) + 0.5 * self.r * dt
+        pd = -0.25 * dt * (((self.sigma / dx) ** 2) - (self.b - (self.sigma ** 2) / 2) / dx)
         St = {}
         pmd = {}
         p = {}
-        St[0] = S * np.exp(-nodes / 2 * dx)
-        C = np.zeros((int(nodes / 2) + 2, nodes + 2), dtype='float')
-        C[0, 0] = max(0, z * (St[0] - K))
+        St[0] = self.S * np.exp(-self.nodes / 2 * dx)
+        C = np.zeros((int(self.nodes / 2) + 2, self.nodes + 2), dtype='float')
+        C[0, 0] = max(0, z * (St[0] - self.K))
         
-        for i in range(1, nodes + 1):
+        for i in range(1, self.nodes + 1):
             St[i] = St[i - 1] * np.exp(dx) # Asset price at maturity
-            C[0, i] = max(0, z * (St[i] - K) ) # At maturity
+            C[0, i] = max(0, z * (St[i] - self.K) ) # At maturity
         
         pmd[1] = pm + pd
         p[1] = -pu * C[0, 2] - (pm - 2) * C[0, 1] - pd * C[0, 0] - pd * (St[1] - St[0])
         
-        for j in range(steps - 1, -1, -1):
-            for i in range(2, nodes):
+        for j in range(self.steps - 1, -1, -1):
+            for i in range(2, self.nodes):
                 p[i] = -pu * C[0, i + 1] - (pm - 2) * C[0, i] - pd * C[0, i - 1] - p[i - 1] * pd / pmd[i - 1]
                 pmd[i] = pm - pu * pd / pmd[i - 1]
     
-            for i in range(nodes - 2, 0, -1):
+            for i in range(self.nodes - 2, 0, -1):
                 C[1, i] = (p[i] - pu * C[1, i + 1]) / pmd[i]
                 
-                for i in range(nodes + 1):
+                for i in range(self.nodes + 1):
                     C[0, i] = C[1, i]
-                    if american == True:
-                        C[0, i] = max(C[1, i], z * (St[i] - K))
+                    if self.american == True:
+                        C[0, i] = max(C[1, i], z * (St[i] - self.K))
            
-        result = C[0, int(nodes / 2)]
+        result = C[0, int(self.nodes / 2)]
     
         return result   
     
     
-    def monte_carlo(self, S, K, T, r, q, sigma, simulations, option='call'):
+    def european_monte_carlo(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
+                             simulations=None, option=None):
         """
         Standard Monte Carlo
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         simulations : Int
-            Number of Monte Carlo runs.
+            Number of Monte Carlo runs. The default is 10000.
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
 
@@ -1037,45 +1153,49 @@ class Pricer():
             Option Price.
 
         """
+        
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, simulations=simulations, 
+                             option=option)
          
-        b = r - q
-        Drift = (b - (sigma ** 2) / 2) * T
-        sigmarT = sigma * np.sqrt(T)
+        Drift = (self.b - (self.sigma ** 2) / 2) * self.T
+        sigmarT = self.sigma * np.sqrt(self.T)
         val = 0
         
         z = 1
-        if option == 'put':
+        if self.option == 'put':
             z = -1
         
-        for i in range(1, simulations + 1):
-            St = S * np.exp(Drift + sigmarT * norm.ppf(random.random(), loc=0, scale=1))
-            val = val + max(z * (St - K), 0) 
+        for i in range(1, self.simulations + 1):
+            St = self.S * np.exp(Drift + sigmarT * norm.ppf(random.random(), loc=0, scale=1))
+            val = val + max(z * (St - self.K), 0) 
             
-        result = np.exp(-r * T) * val / simulations
+        result = np.exp(-self.r * self.T) * val / self.simulations
         
         return result
     
     
-    def monte_carlo_with_greeks(self, S, K, T, r, q, sigma, simulations, option='call', output_flag='price'):
+    def european_monte_carlo_with_greeks(self, S=None, K=None, T=None, r=None, q=None, 
+                                         sigma=None, simulations=None, option=None, 
+                                         output_flag=None):
         """
         Standard Monte Carlo with Greeks
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         simulations : Int
-            Number of Monte Carlo runs.
+            Number of Monte Carlo runs. The default is 10000.
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
         output_flag : Str
@@ -1095,55 +1215,58 @@ class Pricer():
                                Option Vega  
 
         """
+        
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, simulations=simulations, 
+                             option=option, output_flag=output_flag)
                 
-        b = r - q
-        Drift = (b - (sigma ** 2) / 2) * T
-        sigmarT = sigma * np.sqrt(T)
+        Drift = (self.b - (self.sigma ** 2) / 2) * self.T
+        sigmarT = self.sigma * np.sqrt(self.T)
         val = 0
         deltasum = 0
         gammasum = 0
         output = {}
         
         z = 1
-        if option == 'put':
+        if self.option == 'put':
             z = -1
         
-        for i in range(1, simulations + 1):
-            St = S * np.exp(Drift + sigmarT * norm.ppf(random.random(), loc=0, scale=1))
-            val = val + max(z * (St - K), 0) 
-            if z == 1 and St > K:
+        for i in range(1, self.simulations + 1):
+            St = self.S * np.exp(Drift + sigmarT * norm.ppf(random.random(), loc=0, scale=1))
+            val = val + max(z * (St - self.K), 0) 
+            if z == 1 and St > self.K:
                 deltasum = deltasum + St
             if z == -1 and St < K:
                 deltasum = deltasum + St
-            if abs(St - K) < 2:
+            if abs(St - self.K) < 2:
                 gammasum = gammasum + 1
                 
         # Option Value
-        output[0] = np.exp(-r * T) * val / simulations       
+        output[0] = np.exp(-self.r * self.T) * val / self.simulations       
             
         # Delta
-        output[1] = np.exp(-r * T) * deltasum / (simulations * S)
+        output[1] = np.exp(-self.r * self.T) * deltasum / (self.simulations * self.S)
         
         # Gamma
-        output[2] = np.exp(-r * T) * ((K / S) ** 2) * gammasum / (4 * simulations)
+        output[2] = np.exp(-self.r * self.T) * ((self.K / self.S) ** 2) * gammasum / (4 * self.simulations)
         
         # Theta
-        output[3] = (r * output[0] - b * S * output[1] - 0.5 * (sigma ** 2) * (S ** 2) * output[2]) / 365
+        output[3] = (self.r * output[0] - self.b * self.S * output[1] - 0.5 * 
+                     (self.sigma ** 2) * (self.S ** 2) * output[2]) / 365
         
         # Vega
-        output[4] = output[2] * sigma * (S ** 2) * T / 100
+        output[4] = output[2] * self.sigma * (self.S ** 2) * self.T / 100
     
-        if output_flag == 'price':
+        if self.output_flag == 'price':
             result = output[0]
-        if output_flag == 'delta':
+        if self.output_flag == 'delta':
             result = output[1]
-        if output_flag == 'gamma':
+        if self.output_flag == 'gamma':
             result = output[2]
-        if output_flag == 'theta':
+        if self.output_flag == 'theta':
             result = output[3]
-        if output_flag == 'vega':
+        if self.output_flag == 'vega':
             result = output[4]
-        if output_flag == 'all':
+        if self.output_flag == 'all':
             result = ('Price = '+str(output[0]),
                       'Delta = '+str(output[1]),
                       'Gamma = '+str(output[2]),
@@ -1153,26 +1276,27 @@ class Pricer():
         return result
     
     
-    def hull_white_87(self, S, K, T, r, q, sigma, vvol, option='call'):
+    def hull_white_87(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
+                      vvol=None, option=None):
         """
         Hull White 1987 - Uncorrelated Stochastic Volatility.
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         sigma : Float
-            Implied Volatility.
+            Implied Volatility.  The default is 0.2 (20%).
         vvol : Float
-            Vol of vol.
+            Vol of vol. The default is 0.5.
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
 
@@ -1183,30 +1307,32 @@ class Pricer():
 
         """
         
-        b = r - q
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, vvol=vvol, option=option)
         
-        k = vvol ** 2 * T
+        k = self.vvol ** 2 * self.T
         ek = np.exp(k)
         
-        d1 = (np.log(S / K) + (b + (sigma ** 2) / 2) * T) / (sigma * np.sqrt(T))
-        d2 = d1 - sigma * np.sqrt(T)
+        d1 = (np.log(self.S / self.K) + (self.b + (self.sigma ** 2) / 2) * self.T) / (self.sigma * np.sqrt(self.T))
+        d2 = d1 - self.sigma * np.sqrt(self.T)
         Nd1 = si.norm.cdf(d1, 0.0, 1.0)
            
-        cgbs = self.bsm(S, K, T, r, q, sigma, option='call')
+        cgbs = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
+                                         q=self.q, sigma=self.sigma, option='call')
         
         # Partial Derivatives
-        cVV = S * np.exp((b - r) * T) * np.sqrt(T) * Nd1 * (d1 * d2 - 1) / (4 * (sigma ** 3))
-        cVVV = (S * np.exp((b - r) * T) * np.sqrt(T) * Nd1 * ((d1 * d2 - 1) * (d1 * d2 - 3) - 
-                                                              ((d1 ** 2) + (d2 ** 2))) / (8 * (sigma ** 5)))                                                             
+        cVV = (self.S * np.exp((self.b - self.r) * self.T) * np.sqrt(self.T) * Nd1 * 
+               (d1 * d2 - 1) / (4 * (self.sigma ** 3)))
+        cVVV = (self.S * np.exp((self.b - self.r) * self.T) * np.sqrt(self.T) * Nd1 * 
+                ((d1 * d2 - 1) * (d1 * d2 - 3) - ((d1 ** 2) + (d2 ** 2))) / (8 * (self.sigma ** 5)))                                                             
         
-        callvalue = (cgbs + 1 / 2 * cVV * (2 * sigma ** 4 * (ek - k - 1) / k ** 2 - sigma  ** 4) + 
-                     1 / 6 * cVVV * sigma ** 6 * (ek ** 3 - (9 + 18 * k) * ek + 8 + 24 * k + 
+        callvalue = (cgbs + 1 / 2 * cVV * (2 * self.sigma ** 4 * (ek - k - 1) / k ** 2 - self.sigma  ** 4) + 
+                     1 / 6 * cVVV * self.sigma ** 6 * (ek ** 3 - (9 + 18 * k) * ek + 8 + 24 * k + 
                                                   18 * k ** 2 + 6 * k ** 3) / (3 * k ** 3))
         
-        if option == 'call':
+        if self.option == 'call':
             result = callvalue
-        if option == 'put': # use put-call parity to find put
-            result = callvalue - S * np.exp((b - r) * T) + K * np.exp(-r * T)
+        if self.option == 'put': # use put-call parity to find put
+            result = callvalue - self.S * np.exp((self.b - self.r) * self.T) + self.K * np.exp(-self.r * self.T)
             
         return result
 
@@ -1440,9 +1566,11 @@ class ImpliedVol(Pricer):
     
     def __init__(self):
         super().__init__(self)
+        self.refresh = False
 
 
-    def implied_vol_newton_raphson(self, S, K, T, r, q, cm, epsilon, option):
+    def implied_vol_newton_raphson(self, S=None, K=None, T=None, r=None, q=None, 
+                                   cm=None, epsilon=None, option=None):
         """
         Finds implied volatility using Newton-Raphson method - needs knowledge of 
         partial derivative of option pricing formula with respect to volatility (vega)
@@ -1450,21 +1578,21 @@ class ImpliedVol(Pricer):
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         cm : Float
-            Option Price.
+            # Option price used to solve for vol. The default is 5.
         epsilon : Float
-            Degree of precision.
+            Degree of precision. The default is 0.0001
         option : Str
-            Type of option. 'put' or 'call'.
+            Type of option. 'put' or 'call'. The default is 'call'.
 
         Returns
         -------
@@ -1472,20 +1600,27 @@ class ImpliedVol(Pricer):
             Implied Volatility.
 
         """
+        
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, cm=cm, epsilon=epsilon, option=option)
                 
         # Manaster and Koehler seed value
-        vi = np.sqrt(abs(np.log(S / K) + r * T) * 2 / T)
-        ci = self.black_scholes_merton(S, K, T, r, q, vi, option)    
-        vegai = self.black_scholes_merton_vega(S, K, T, r, q, vi)
-        mindiff = abs(cm - ci)
+        vi = np.sqrt(abs(np.log(self.S / self.K) + self.r * self.T) * 2 / self.T)
+        ci = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, q=self.q, 
+                                       sigma=vi, option=self.option)    
+        vegai = self.black_scholes_merton_vega(S=self.S, K=self.K, T=self.T, r=self.r, 
+                                               q=self.q, sigma=vi, option=self.option)
+        mindiff = abs(self.cm - ci)
     
-        while abs(cm - ci) >= epsilon and abs(cm - ci) <= mindiff:
-            vi = vi - (ci - cm) / vegai
-            ci = self.black_scholes_merton(S, K, T, r, q, vi, option)
-            vegai = self.black_scholes_merton_vega(S, K, T, r, q, vi)
-            mindiff = abs(cm - ci)
+        while abs(self.cm - ci) >= self.epsilon and abs(self.cm - ci) <= mindiff:
+            vi = vi - (ci - self.cm) / vegai
+            ci = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
+                                           q=self.q, sigma=vi, option=self.option)
+            vegai = self.black_scholes_merton_vega(S=self.S, K=self.K, T=self.T, 
+                                                   r=self.r, q=self.q, sigma=vi, 
+                                                   option=self.option)
+            mindiff = abs(self.cm - ci)
             
-        if abs(cm - ci) < epsilon:
+        if abs(self.cm - ci) < self.epsilon:
             result = vi
         else:
             result = 'NA'
@@ -1493,28 +1628,30 @@ class ImpliedVol(Pricer):
         return result
     
     
-    def implied_vol_bisection(self, S, K, T, r, q, cm, epsilon, option):
+    def implied_vol_bisection(self, S=None, K=None, T=None, r=None, q=None, cm=None, 
+                              epsilon=None, option=None):
         """
         Finds implied volatility using bisection method.
 
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         cm : Float
-            Option Price.
+            # Option price used to solve for vol. The default is 5.
         epsilon : Float
-            Degree of precision.
+            Degree of precision. The default is 0.0001
         option : Str
-            Type of option. 'put' or 'call'.
+            Type of option. 'put' or 'call'. The default is 'call'.
+
 
         Returns
         -------
@@ -1522,34 +1659,45 @@ class ImpliedVol(Pricer):
             Implied Volatility.
 
         """
+        
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, cm=cm, epsilon=epsilon, option=option)
+        
         vLow = 0.005
         vHigh = 4
-        cLow = self.bsm(S, K, T, r, q, vLow, option)
-        cHigh = self.bsm(S, K, T, r, q, vHigh, option)
+        cLow = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
+                                           q=self.q, sigma=vLow, option=self.option)
+        cHigh = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
+                                           q=self.q, sigma=vHigh, option=self.option)
         counter = 0
         
-        vi = vLow + (cm - cLow) * (vHigh - vLow) / (cHigh - cLow)
+        vi = vLow + (self.cm - cLow) * (vHigh - vLow) / (cHigh - cLow)
         
-        while abs(cm - self.black_scholes_merton(S, K, T, r, q, vi, option)) > epsilon:
+        while abs(self.cm - self.black_scholes_merton(S=self.S, K=self.K, T=self.T, 
+                                                      r=self.r, q=self.q, sigma=vi, 
+                                                      option=self.option)) > self.epsilon:
             counter = counter + 1
             if counter == 100:
                 result = 'NA'
             
-            if self.black_scholes_merton(S, K, T, r, q, vi, option) < cm:
+            if self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
+                                         q=self.q, sigma=vi, option=self.option) < self.cm:
                 vLow = vi
             else:
                 vHigh = vi
             
-            cLow = self.black_scholes_merton(S, K, T, r, q, vLow, option)
-            cHigh = self.black_scholes_merton(S, K, T, r, q, vHigh, option)
-            vi = vLow + (cm - cLow) * (vHigh - vLow) / (cHigh - cLow)
+            cLow = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
+                                             q=self.q, sigma=vLow, option=self.option)
+            cHigh = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
+                                              q=self.q, sigma=vHigh, option=self.option)
+            vi = vLow + (self.cm - cLow) * (vHigh - vLow) / (cHigh - cLow)
             
         result = vi    
             
         return result
 
    
-    def implied_vol_naive(self, S, K, T, r, q, cm, epsilon, option):
+    def implied_vol_naive(self, S=None, K=None, T=None, r=None, q=None, cm=None, 
+                          epsilon=None, option=None):
         """
         Finds implied volatility using simple naive iteration, increasing precision 
         each time the difference changes sign.
@@ -1557,21 +1705,22 @@ class ImpliedVol(Pricer):
         Parameters
         ----------
         S : Float
-            Stock Price.
+            Stock Price. The default is 100.
         K : Float
-            Strike Price.
+            Strike Price. The default is 100.
         T : Float
-            Time to Maturity.
+            Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
-            Interest Rate.
+            Interest Rate. The default is 0.005 (50bps)
         q : Float
-            Dividend Yield.
+            Dividend Yield.  The default is 0.
         cm : Float
-            Option Price.
+            # Option price used to solve for vol. The default is 5.
         epsilon : Float
-            Degree of precision.
+            Degree of precision. The default is 0.0001
         option : Str
-            Type of option. 'put' or 'call'.
+            Type of option. 'put' or 'call'. The default is 'call'.
+
 
         Returns
         -------
@@ -1579,30 +1728,48 @@ class ImpliedVol(Pricer):
             Implied Volatility.
 
         """
+        
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, cm=cm, epsilon=epsilon, option=option)
+        
         vi = 0.2
-        ci = self.black_scholes_merton(S=S, K=K, T=T, r=r, q=q, sigma=vi, option=option)
-        price_diff = cm - ci
+        ci = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
+                                       q=self.q, sigma=vi, option=self.option)
+        price_diff = self.cm - ci
         if price_diff > 0:
             flag = 1
         else:
             flag = -1
-        while abs(price_diff) > epsilon:
+        while abs(price_diff) > self.epsilon:
             while price_diff * flag > 0:
-                ci = self.bsm(S=S, K=K, T=T, r=r, q=q, sigma=vi, option=option)
-                price_diff = cm - ci
+                ci = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
+                                               q=self.q, sigma=vi, option=self.option)
+                price_diff = self.cm - ci
                 vi += (0.01 * flag)
             while price_diff * flag < 0:
-                ci = self.bsm(S=S, K=K, T=T, r=r, q=q, sigma=vi, option=option)
-                price_diff = cm - ci
+                ci = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
+                                               q=self.q, sigma=vi, option=self.option)
+
+                price_diff = self.cm - ci
                 vi -= (0.001 * flag)
             while price_diff > 0:
-                ci = self.bsm(S=S, K=K, T=T, r=r, q=q, sigma=vi, option=option)
-                price_diff = cm - ci
+                ci = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
+                                               q=self.q, sigma=vi, option=self.option)
+
+                price_diff = self.cm - ci
                 vi += (0.0001 * flag)
-            while price_diff > 0:
-                ci = self.bsm(S=S, K=K, T=T, r=r, q=q, sigma=vi, option=option)
-                price_diff = cm - ci
+            while price_diff < 0:
+                ci = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
+                                               q=self.q, sigma=vi, option=self.option)
+
+                price_diff = self.cm - ci
                 vi -= (0.00001 * flag)
+                
+            while price_diff > 0:
+                ci = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
+                                               q=self.q, sigma=vi, option=self.option)
+
+                price_diff = self.cm - ci
+                vi += (0.000001 * flag)    
         
         result = vi    
             
