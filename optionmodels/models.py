@@ -233,8 +233,8 @@ class Pricer():
          
         return opt_vega
     
-    
-    def black_76(self, F=None, K=None, T=None, r=None, q=None, sigma=None, option=None):
+   
+    def black_76(self, F=None, K=None, T=None, r=None, sigma=None, option=None):
         """
         Black 76 Futures Option price 
 
@@ -261,8 +261,8 @@ class Pricer():
             Option Price.
 
         """
-        
-        self._refresh_params(F=F, K=K, T=T, r=r, q=q, sigma=sigma, option=option)
+
+        self._refresh_params(F=F, K=K, T=T, r=r, sigma=sigma, option=option)
         
         carry = np.exp(-self.r * self.T)
         d1 = (np.log(self.F / self.K) + (0.5 * self.sigma ** 2) * self.T) / (self.sigma * np.sqrt(self.T))
@@ -337,7 +337,7 @@ class Pricer():
                                
         return np.exp(-self.r * self.T) * val                     
                 
-    
+   
     def cox_ross_rubinstein_binomial(self, S=None, K=None, T=None, r=None, q=None, 
                                      sigma=None, steps=None, option=None, output_flag=None, 
                                      american=None):
@@ -434,7 +434,7 @@ class Pricer():
                                
         return result
     
-    
+   
     def leisen_reimer_binomial(self, S=None, K=None, T=None, r=None, q=None, 
                                      sigma=None, steps=None, option=None, output_flag=None, 
                                      american=None):
@@ -635,7 +635,7 @@ class Pricer():
                                
         return result                     
     
-    
+   
     def implied_trinomial_tree(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
                        steps=None, option=None, output_flag=None, step=None, state=None, 
                        skew=None):
@@ -815,7 +815,7 @@ class Pricer():
                                
         return result    
     
-    
+   
     def explicit_finite_difference(self, S=None, K=None, T=None, r=None, q=None, 
                                    sigma=None, nodes=None, option=None, american=None):
         """
@@ -892,7 +892,7 @@ class Pricer():
     
         return result          
     
-    
+  
     def implicit_finite_difference(self, S=None, K=None, T=None, r=None, q=None, 
                                    sigma=None, steps=None, nodes=None, option=None, 
                                    american=None):
@@ -1173,7 +1173,7 @@ class Pricer():
         
         return result
     
-    
+   
     def european_monte_carlo_with_greeks(self, S=None, K=None, T=None, r=None, q=None, 
                                          sigma=None, simulations=None, option=None, 
                                          output_flag=None):
@@ -1275,7 +1275,7 @@ class Pricer():
                 
         return result
     
-    
+   
     def hull_white_87(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
                       vvol=None, option=None):
         """
@@ -1336,50 +1336,20 @@ class Pricer():
             
         return result
 
+ 
 
-    def cholesky_decomposition(self, R):
-        """
-        Cholesky Decomposition.
-        Return M in M * M.T = R where R is a symmetric positive definite correlation matrix
-
-        Parameters
-        ----------
-        R : Array
-            Correlation matrix.
-
-        Returns
-        -------
-        M : Array
-            Matrix decomposition.
-
-        """
-                
-        # Number of columns in input correlation matrix R
-        n = len(R[0])
-        
-        a = np.zeros((n + 1, n + 1))
-        M = np.zeros((n + 1, n + 1))
-        
-        for i in range(n + 1):
-            for j in range(n + 1):
-                a[i, j] = R[i, j]
-                M[i, j] = 0
-                
-        for i in range(n + 1):
-            for j in range(n + 1):
-                U = a[i, j]
-            for h in range(1, i):
-                U = U - M[i, h] * M[j, h]
-            if j == 1:
-                M[i, i] = np.sqrt(U)
-            else:
-                M[j, i] = U / M[i, i]
-        
-        return M        
+sabr_df_dict = {'df_F':100,
+                'df_X':70,
+                'df_T':0.5,
+                'df_r':0.05,
+                'df_atmvol':0.3, 
+                'df_beta':0.9999, 
+                'df_volvol':0.5, 
+                'df_rho':-0.4,
+                'df_option':'put'}
 
 
-
-class SABRVolatility():
+class SABRVolatility(Pricer):
     """
     Stochastic, Alpha, Beta, Rho model
     
@@ -1393,16 +1363,35 @@ class SABRVolatility():
              
     """
     
-    def __init__(self, F, X, T, atmvol, beta, volvol, rho):
-        self.F = F
-        self.X = X
-        self.T = T
-        self.atmvol = atmvol
-        self.beta = beta
-        self.volvol = volvol
-        self.rho = rho
+    def __init__(self, F=sabr_df_dict['df_F'], X=sabr_df_dict['df_X'], T=sabr_df_dict['df_T'], 
+                 r=sabr_df_dict['df_r'], atmvol=sabr_df_dict['df_atmvol'], beta=sabr_df_dict['df_beta'], 
+                 volvol=sabr_df_dict['df_volvol'], rho=sabr_df_dict['df_rho'], option=sabr_df_dict['df_option'], 
+                 sabr_df_dict=sabr_df_dict):
+        super().__init__(self) # Inherit methods from Pricer class
+        self.F = F # Forward price
+        self.X = X # Strike price
+        self.T = T # Time to maturity
+        self.r = r # Interest rate
+        self.atmvol = atmvol # To be calibrated to Black 76 At The Money volatility
+        self.beta = beta # Normal or Lognormal Stochastic Volatility
+        self.volvol = volvol # Volatility of volatility
+        self.rho = rho # Correlation between volatility and underlying asset
+        self.option = option # Option type, call or put
+        self.refresh = False # Whether to refresh parameters, set to False if called from another function
+        self.sabr_df_dict = sabr_df_dict # Dictionary of default SABR parameters
         
+  
+    def price(self, option=None):
         
+        if option is None:
+            option = self.option
+        else:
+            self.option=option
+        
+        return self.black_76(F=self.F, K=self.X, T=self.T, r=self.r, sigma=self.black_vol, 
+                             option=self.option) 
+    
+ 
     def calibrate(self):
         """
         Run the SABR calibration
@@ -1413,7 +1402,9 @@ class SABRVolatility():
             Black-76 equivalent SABR volatility.
 
         """
-        return self._alpha_sabr(self._find_alpha())
+        self.black_vol = self._alpha_sabr(self._find_alpha())
+        
+        return self.black_vol
     
     
     def _alpha_sabr(self, alpha):
@@ -1431,7 +1422,7 @@ class SABRVolatility():
             Black-76 equivalent SABR volatility.
 
         """
-                
+                        
         dSABR = np.zeros(4)
         dSABR[1] = (alpha / ((self.F * self.X) ** ((1 - self.beta) / 2) * (1 + (((1 - self.beta) ** 2) / 24) * 
                     (np.log(self.F / self.X) ** 2) + ((1 - self.beta) ** 4 / 1920) * (np.log(self.F / self.X) ** 4))))
@@ -1449,7 +1440,7 @@ class SABRVolatility():
             dSABR[2] = 1
             
         dSABR[3] = (1 + ((((1 - self.beta) ** 2 / 24) * alpha ** 2 / ((self.F * self.X) ** (1 - self.beta))) + 
-                         0.25 * self.rho * self.beta * self.VolVol * alpha / ((self.F * self.X) ** ((1 - self.beta) / 2)) + 
+                         0.25 * self.rho * self.beta * self.volvol * alpha / ((self.F * self.X) ** ((1 - self.beta) / 2)) + 
                          (2 - 3 * self.rho ** 2) * self.volvol ** 2 / 24) * self.T)
         
         result = dSABR[1] * dSABR[2] * dSABR[3]
@@ -1469,12 +1460,12 @@ class SABRVolatility():
         """
         # Alpha is a function of atm vol etc
         
-        result = self._cube_root((1 - self.beta) ** 2 * self.T / (24 * self.F **(2 - 2 * self.beta)), 
-                       0.25 * self.rho * self.volvol * self.beta * self.T / self.F ** (1 - self.beta), 
-                       1 + (2 - 3 * self.rho ** 2) / 24 * self.volvol ** 2 * self.T, 
-                       -self.atmvol * self.F ** (1 - self.beta))
+        self.alpha = self._cube_root(((1 - self.beta) ** 2 * self.T / (24 * self.F ** (2 - 2 * self.beta))), 
+                                     (0.25 * self.rho * self.volvol * self.beta * self.T / self.F ** (1 - self.beta)), 
+                                     (1 + (2 - 3 * self.rho ** 2) / 24 * self.volvol ** 2 * self.T), 
+                                     (-self.atmvol * self.F ** (1 - self.beta)))
         
-        return result
+        return self.alpha
     
     
     def _cube_root(self, cubic, quadratic, linear, constant):
@@ -1565,10 +1556,10 @@ class SABRVolatility():
 class ImpliedVol(Pricer):
     
     def __init__(self):
-        super().__init__(self)
-        self.refresh = False
+        super().__init__(self) # Inherit methods from Pricer class
+        self.refresh = False # Whether to refresh parameters, set to False if called from another function
 
-
+   
     def implied_vol_newton_raphson(self, S=None, K=None, T=None, r=None, q=None, 
                                    cm=None, epsilon=None, option=None):
         """
@@ -1627,7 +1618,7 @@ class ImpliedVol(Pricer):
         
         return result
     
-    
+
     def implied_vol_bisection(self, S=None, K=None, T=None, r=None, q=None, cm=None, 
                               epsilon=None, option=None):
         """
@@ -1776,5 +1767,51 @@ class ImpliedVol(Pricer):
         return result
 
 
+
+class Tools():
+    
+    def __init__(self):
+        pass
+   
+
+    def cholesky_decomposition(self, R):
+        """
+        Cholesky Decomposition.
+        Return M in M * M.T = R where R is a symmetric positive definite correlation matrix
+
+        Parameters
+        ----------
+        R : Array
+            Correlation matrix.
+
+        Returns
+        -------
+        M : Array
+            Matrix decomposition.
+
+        """
+                
+        # Number of columns in input correlation matrix R
+        n = len(R[0])
+        
+        a = np.zeros((n + 1, n + 1))
+        M = np.zeros((n + 1, n + 1))
+        
+        for i in range(n + 1):
+            for j in range(n + 1):
+                a[i, j] = R[i, j]
+                M[i, j] = 0
+                
+        for i in range(n + 1):
+            for j in range(n + 1):
+                U = a[i, j]
+            for h in range(1, i):
+                U = U - M[i, h] * M[j, h]
+            if j == 1:
+                M[i, i] = np.sqrt(U)
+            else:
+                M[j, i] = U / M[i, i]
+        
+        return M        
 
 
