@@ -15,7 +15,8 @@ df_dict = {'df_S':100,
            'df_q':0,
            'df_sigma':0.2,
            'df_option':'call',
-           'df_steps':10,
+           'df_steps':1000,
+           'df_steps_itt':10,
            'df_nodes':100,
            'df_vvol':0.5,
            'df_simulations':10000,
@@ -32,16 +33,16 @@ df_dict = {'df_S':100,
            'df_epsilon':0.0001,
            'df_refresh':True,
            'df_params_list':['S', 'K', 'T', 'r', 'q', 'sigma', 'option', 'steps', 
-                             'nodes', 'vvol', 'simulations', 'output_flag', 'american', 
-                             'step', 'state', 'skew', 'sig0', 'sigLR', 'halflife', 
-                             'rho', 'cm', 'epsilon']}
+                             'steps_itt', 'nodes', 'vvol', 'simulations', 'output_flag', 
+                             'american', 'step', 'state', 'skew', 'sig0', 'sigLR', 
+                             'halflife', 'rho', 'cm', 'epsilon']}
 
 
 class Pricer():
     
     def __init__(self, S=df_dict['df_S'], F=df_dict['df_F'], K=df_dict['df_K'], T=df_dict['df_T'], r=df_dict['df_r'], 
              q=df_dict['df_q'], sigma=df_dict['df_sigma'], option=df_dict['df_option'], 
-             steps=df_dict['df_steps'], nodes=df_dict['df_nodes'], vvol=df_dict['df_vvol'], 
+             steps=df_dict['df_steps'], steps_itt=df_dict['df_steps_itt'], nodes=df_dict['df_nodes'], vvol=df_dict['df_vvol'], 
              simulations=df_dict['df_simulations'], output_flag=df_dict['df_output_flag'], 
              american=df_dict['df_american'], step=df_dict['df_step'], state=df_dict['df_state'], 
              skew=df_dict['df_skew'], sig0=df_dict['df_sig0'], sigLR=df_dict['df_sigLR'], 
@@ -59,6 +60,7 @@ class Pricer():
         self.sigma = sigma # Volatility
         self.option = option # Option type, call or put
         self.steps = steps # Number of time steps.
+        self.steps_itt = steps_itt # Number of time steps for Implied Trinomial Tree.
         self.nodes = nodes # Number of price steps.
         self.vvol = vvol # Vol of vol.
         self.simulations = simulations # Number of Monte Carlo runs.
@@ -314,7 +316,7 @@ class Pricer():
         sigma : Float
             Implied Volatility.  The default is 0.2 (20%).
         steps : Int
-            Number of time steps.
+            Number of time steps. The default is 1000.
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
 
@@ -369,7 +371,7 @@ class Pricer():
         sigma : Float
             Implied Volatility.  The default is 0.2 (20%).
         steps : Int
-            Number of time steps.
+            Number of time steps. The default is 1000.
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
         output_flag : Str
@@ -466,7 +468,7 @@ class Pricer():
         sigma : Float
             Implied Volatility.  The default is 0.2 (20%).
         steps : Int
-            Number of time steps.
+            Number of time steps. The default is 1000.
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
         output_flag : Str
@@ -566,7 +568,7 @@ class Pricer():
         sigma : Float
             Implied Volatility.  The default is 0.2 (20%).
         steps : Int
-            Number of time steps. The default is 10. 
+            Number of time steps. The default is 1000. 
         option : Str
             Type of option, 'put' or 'call'. The default is 'call'.
         output_flag : Str
@@ -647,7 +649,7 @@ class Pricer():
     
    
     def implied_trinomial_tree(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
-                       steps=None, option=None, output_flag=None, step=None, state=None, 
+                       steps_itt=None, option=None, output_flag=None, step=None, state=None, 
                        skew=None):
         """
         Implied Trinomial Tree
@@ -666,8 +668,8 @@ class Pricer():
             Dividend Yield.  The default is 0.
         sigma : Float
             Implied Volatility.  The default is 0.2 (20%).
-        steps : Int
-            Number of time steps. The default is 10. 
+        steps_itt : Int
+            Number of time steps. The default is 10.
         option : Str
             Type of option. 'put' or 'call'. The default is 'call'.
         output_flag : Str
@@ -702,7 +704,7 @@ class Pricer():
 
         """
         
-        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps_itt=steps_itt, 
                              option=option, output_flag=output_flag, step=step, 
                              state=state, skew=skew)
                 
@@ -710,19 +712,19 @@ class Pricer():
         if self.option == 'put':
             z = -1
         
-        optionvaluenode = np.zeros((self.steps * 2 + 1))
-        arrowdebreu = np.zeros((self.steps + 1, self.steps * 2 + 1), dtype='float')
-        upprob = np.zeros((self.steps, self.steps * 2 - 1), dtype='float')
-        downprob = np.zeros((self.steps, self.steps * 2 - 1), dtype='float')
-        localvol = np.zeros((self.steps, self.steps * 2 - 1), dtype='float')
+        optionvaluenode = np.zeros((self.steps_itt * 2 + 1))
+        arrowdebreu = np.zeros((self.steps_itt + 1, self.steps_itt * 2 + 1), dtype='float')
+        upprob = np.zeros((self.steps_itt, self.steps_itt * 2 - 1), dtype='float')
+        downprob = np.zeros((self.steps_itt, self.steps_itt * 2 - 1), dtype='float')
+        localvol = np.zeros((self.steps_itt, self.steps_itt * 2 - 1), dtype='float')
         
-        dt = self.T / self.steps
+        dt = self.T / self.steps_itt
         u = np.exp(self.sigma * np.sqrt(2 * dt))
         d = 1 / u
         df = np.exp(-self.r * dt)
         arrowdebreu[0, 0] = 1 
                 
-        for n in range(self.steps):
+        for n in range(self.steps_itt):
             for i in range(n * 2 + 1):
                 val = 0
                 Si1 = self.S * (u ** (max(i - n, 0))) * (d ** (max(n * 2 - n - i, 0)))
@@ -811,11 +813,11 @@ class Pricer():
         elif self.output_flag == 'price':
             
             # Calculation of option price using the implied trinomial tree
-            for i in range(2 * self.steps + 1):
-                optionvaluenode[i] = max(0, z * (self.S * (u ** max(i - self.steps, 0)) * 
-                                                 (d ** (max((self.steps - i), 0))) - self.K))    
+            for i in range(2 * self.steps_itt + 1):
+                optionvaluenode[i] = max(0, z * (self.S * (u ** max(i - self.steps_itt, 0)) * 
+                                                 (d ** (max((self.steps_itt - i), 0))) - self.K))    
     
-            for n in range(self.steps - 1, -1, -1):
+            for n in range(self.steps_itt - 1, -1, -1):
                 for i in range(n * 2 + 1):
                     optionvaluenode[i] = ((upprob[n, i] * optionvaluenode[i + 2] + 
                                           (1 - upprob[n, i] - downprob[n, i]) * optionvaluenode[i + 1] + 
@@ -908,7 +910,8 @@ class Pricer():
                                    american=None):
         """
         Implicit Finite Difference
-
+        # Slow to converge - steps has small effect, need nodes 3000+
+ 
         Parameters
         ----------
         S : Float
@@ -924,7 +927,7 @@ class Pricer():
         sigma : Float
             Implied Volatility.  The default is 0.2 (20%).
         steps : Int
-            Number of time steps. The default is 10.
+            Number of time steps. The default is 1000.
         nodes : Float
             Number of price steps. The default is 100.
         option : Str
@@ -950,7 +953,7 @@ class Pricer():
         # Make sure current asset price falls at grid point
         dS = 2 * self.S / self.nodes
         SGridtPt = int(self.S / dS)
-        nodes = int(self.K / dS) * 2
+        self.nodes = int(self.K / dS) * 2
         dt = self.T / self.steps
         
         CT = np.zeros(self.nodes + 1)
@@ -969,16 +972,16 @@ class Pricer():
             
         p[self.nodes, self.nodes] = 1
         
-        C = np.matmul(np.linalg.inv(p), CT.T)
+        self.C = np.matmul(np.linalg.inv(p), CT.T)
         
         for j in range(self.steps - 1, 0, -1):
-            C = np.matmul(np.linalg.inv(p), C)
+            self.C = np.matmul(np.linalg.inv(p), self.C)
             
             if self.american == True: # American option
                 for i in range(1, self.nodes + 1):
-                    C[i] = max(float(C[i]), z * ((i - 1) * dS - self.K))
+                    self.C[i] = max(float(self.C[i]), z * ((i - 1) * dS - self.K))
                 
-        result = C[SGridtPt + 1]
+        result = self.C[SGridtPt + 1]
         
         return result   
     
@@ -1004,7 +1007,7 @@ class Pricer():
         sigma : Float
             Implied Volatility.  The default is 0.2 (20%).
         steps : Int
-            Number of time steps. The default is 10.
+            Number of time steps. The default is 1000.
         nodes : Float
             Number of price steps. The default is 100.
         option : Str
@@ -1074,7 +1077,7 @@ class Pricer():
         sigma : Float
             Implied Volatility.  The default is 0.2 (20%).
         steps : Int
-            Number of time steps. The default is 10.
+            Number of time steps. The default is 1000.
         nodes : Float
             Number of price steps. The default is 100.
         option : Str
@@ -1101,23 +1104,25 @@ class Pricer():
         pu = -0.25 * dt * (((self.sigma / dx) ** 2) + (self.b - (self.sigma ** 2) / 2) / dx)
         pm = 1 + 0.5 * dt * ((self.sigma / dx) ** 2) + 0.5 * self.r * dt
         pd = -0.25 * dt * (((self.sigma / dx) ** 2) - (self.b - (self.sigma ** 2) / 2) / dx)
-        St = {}
-        pmd = {}
-        p = {}
+        St = np.zeros(self.nodes + 2)
+        pmd = np.zeros(self.nodes + 1)
+        p = np.zeros(self.nodes + 1)
         St[0] = self.S * np.exp(-self.nodes / 2 * dx)
         C = np.zeros((int(self.nodes / 2) + 2, self.nodes + 2), dtype='float')
         C[0, 0] = max(0, z * (St[0] - self.K))
         
         for i in range(1, self.nodes + 1):
             St[i] = St[i - 1] * np.exp(dx) # Asset price at maturity
-            C[0, i] = max(0, z * (St[i] - self.K) ) # At maturity
+            C[0, i] = max(0, z * (St[i] - self.K)) # At maturity
         
         pmd[1] = pm + pd
-        p[1] = -pu * C[0, 2] - (pm - 2) * C[0, 1] - pd * C[0, 0] - pd * (St[1] - St[0])
+        p[1] = (-pu * C[0, 2] - (pm - 2) * C[0, 1] - 
+                pd * C[0, 0] - pd * (St[1] - St[0]))
         
         for j in range(self.steps - 1, -1, -1):
             for i in range(2, self.nodes):
-                p[i] = -pu * C[0, i + 1] - (pm - 2) * C[0, i] - pd * C[0, i - 1] - p[i - 1] * pd / pmd[i - 1]
+                p[i] = (-pu * C[0, i + 1] - (pm - 2) * C[0, i] - 
+                        pd * C[0, i - 1] - p[i - 1] * pd / pmd[i - 1])
                 pmd[i] = pm - pu * pd / pmd[i - 1]
     
             for i in range(self.nodes - 2, 0, -1):
