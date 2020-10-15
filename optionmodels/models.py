@@ -24,12 +24,17 @@ df_dict = {'df_S':100,
            'df_step':5,
            'df_state':5,
            'df_skew':0.0004,
+           'df_sig0':0.09,
+           'df_sigLR':0.0625, 
+           'df_halflife':0.1,
+           'df_rho':0,
            'df_cm':5.0,
            'df_epsilon':0.0001,
            'df_refresh':True,
            'df_params_list':['S', 'K', 'T', 'r', 'q', 'sigma', 'option', 'steps', 
                              'nodes', 'vvol', 'simulations', 'output_flag', 'american', 
-                             'step', 'state', 'skew', 'cm', 'epsilon']}
+                             'step', 'state', 'skew', 'sig0', 'sigLR', 'halflife', 
+                             'rho', 'cm', 'epsilon']}
 
 
 class Pricer():
@@ -39,8 +44,9 @@ class Pricer():
              steps=df_dict['df_steps'], nodes=df_dict['df_nodes'], vvol=df_dict['df_vvol'], 
              simulations=df_dict['df_simulations'], output_flag=df_dict['df_output_flag'], 
              american=df_dict['df_american'], step=df_dict['df_step'], state=df_dict['df_state'], 
-             skew=df_dict['df_skew'], cm=df_dict['df_cm'], epsilon=df_dict['df_epsilon'], 
-             refresh=df_dict['df_refresh'], df_params_list=df_dict['df_params_list'], 
+             skew=df_dict['df_skew'], sig0=df_dict['df_sig0'], sigLR=df_dict['df_sigLR'], 
+             halflife=df_dict['df_halflife'], rho=df_dict['df_rho'], cm=df_dict['df_cm'], 
+             epsilon=df_dict['df_epsilon'], refresh=df_dict['df_refresh'], df_params_list=df_dict['df_params_list'], 
              df_dict=df_dict):
         
         self.S = S # Spot price
@@ -62,6 +68,10 @@ class Pricer():
         self.state = state # State position used for Arrow Debreu price at single node.
         self.skew = skew # Rate at which volatility increases (decreases) for every one point decrease 
                          # (increase) in the strike price.
+        self.sig0 = sig0 # Initial Volatility.
+        self.sigLR = sigLR # Long run mean reversion level of volatility.
+        self.halflife = halflife # Half-life of volatility deviation 
+        self.rho = rho # Correlation between asset price and volatility
         self.cm = cm # Option price used to solve for vol.
         self.epsilon = epsilon # Degree of precision for implied vol
         self.refresh = refresh # Whether to refresh parameters, set to False if called from another function
@@ -1314,6 +1324,7 @@ class Pricer():
         
         d1 = (np.log(self.S / self.K) + (self.b + (self.sigma ** 2) / 2) * self.T) / (self.sigma * np.sqrt(self.T))
         d2 = d1 - self.sigma * np.sqrt(self.T)
+        # Cumulative normal distribution function
         Nd1 = si.norm.cdf(d1, 0.0, 1.0)
            
         cgbs = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
@@ -1336,7 +1347,114 @@ class Pricer():
             
         return result
 
- 
+
+    def hull_white_88(self, S=None, K=None, T=None, r=None, q=None, sig0=None, sigLR=None,
+                      halflife=None, vvol=None, rho=None, option=None):
+        """
+        Hull White 1988 - Correlated Stochastic Volatility.
+
+        Parameters
+        ----------
+        S : Float
+            Stock Price. The default is 100.
+        K : Float
+            Strike Price. The default is 100.
+        T : Float
+            Time to Maturity.  The default is 0.25 (3 Months).
+        r : Float
+            Interest Rate. The default is 0.005 (50bps)
+        q : Float
+            Dividend Yield.  The default is 0.
+        sig0 : Float
+            Initial Volatility. The default is 0.09 (9%).
+        sigLR : Float
+            Long run mean reversion level of volatility. The default is 0.0625 (6.25%).
+        halflife : Float
+            Half-life of volatility deviation. The default is 0.1. 
+        vvol : Float
+            Vol of vol. The default is 0.5.
+        rho : Float
+            Correlation between asset price and volatility. The default is 0.
+        option : Str
+            Type of option. 'put' or 'call'. The default is 'call'.
+
+        Returns
+        -------
+        result : Float
+            Option price.
+
+        """
+        
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sig0=sig0, sigLR=sigLR, halflife=halflife, 
+                             vvol=vvol, rho=rho, option=option)
+
+        beta = -np.log(2) / self.halflife # Find constant, beta, from Half-life
+        a = -beta * (self.sigLR ** 2) # Find constant, a, from long run volatility
+        delta = beta * self.T
+        ed = np.exp(delta)
+        v = self.sig0 ** 2
+
+        # Average expected variance
+        if abs(beta) < 0.0001:
+            vbar = v + 0.5 * a * self.T 
+        else:
+            vbar = (v + (a / beta)) * ((ed - 1) / delta) - (a / beta)
+            
+        d1 = (np.log(self.S / self.K) + (self.b + (vbar / 2)) * self.T) / np.sqrt(vbar * self.T)
+        d2 = d1 - np.sqrt(vbar * self.T)
+        
+        # standardised normal density function
+        nd1 = (1 / np.sqrt(2 * np.pi)) * (np.exp(-d1 ** 2 * 0.5))
+        
+        # Cumulative normal distribution function
+        Nd1 = si.norm.cdf(d1, 0.0, 1.0)
+        Nd2 = si.norm.cdf(d2, 0.0, 1.0)
+        
+        # Partial derivatives
+        cSV = -self.S * np.exp((self.b - self.r) * self.T) * nd1 * (d2 / (2 * vbar))
+        cVV = ((self.S * np.exp((self.b - self.r) * self.T) * nd1 * np.sqrt(self.T) / 
+               (4 * vbar ** 1.5)) * (d1 * d2 - 1))
+        cSVV = ((self.S * np.exp((self.b - self.r) * self.T) / (4 * vbar ** 2)) * 
+                nd1 * ((-d1 * (d2 ** 2)) + d1 + (2 * d2)))                      
+        cVVV = (((self.S * np.exp((self.b - self.r) * self.T) * nd1 * np.sqrt(self.T)) / 
+                (8 * vbar ** 2.5)) * ((d1 * d2 - 1) * (d1 * d2 - 3) - ((d1 ** 2) + (d2 ** 2)))) 
+
+        if abs(beta) < 0.0001:
+            f1 = self.rho * ((a * self.T / 3) + v) * (self.T / 2) * cSV
+            phi1 = (self.rho ** 2) * ((a * self.T / 4) + v) * ((self.T ** 3) / 6)
+            phi2 = (2 + (1 / (self.rho ** 2))) * phi1
+            phi3 = (self.rho ** 2) * (((a * self.T / 3) + v) ** 2) * ((self.T ** 4) / 8)
+            phi4 = 2 * phi3
+        else: # Beta different from zero
+            phi1 = (((self.rho ** 2) / (beta ** 4)) * 
+                    (((a + (beta * v)) * 
+                    ((ed * (((delta ** 2) / 2) - delta + 1)) - 1)) + 
+                    (a * ((ed * (2 - delta)) - (2 + delta)))))
+            phi2 = ((2 * phi1) + 
+                    ((1 / (2 * (beta ** 4))) * 
+                    (((a + (beta * v)) * ((ed ** 2) - (2 * delta * ed) - 1)) - 
+                    ((a / 2) * ((ed ** 2) - (4 * ed) + (2 * delta) + 3)))))
+            phi3 = (((self.rho ** 2) / (2 * (beta ** 6))) * 
+                    ((((a + (beta * v)) * (ed - delta * ed - 1)) - (a * (1 + delta - ed))) ** 2))
+            phi4 = 2 * phi3
+            f1 = ((self.rho / ((beta ** 3) * self.T)) * 
+                  (((a + (beta * v)) * (1 - ed + (delta * ed))) + 
+                   (a * (1 + delta - ed))) * cSV)
+
+        f0 = self.S * np.exp((self.b - self.r) * self.T) * Nd1 - self.K * np.exp(-self.r * self.T) * Nd2
+        f2 = (((phi1 / self.T) * cSV) + ((phi2 / (self.T ** 2)) * cVV) + 
+              ((phi3 / (self.T ** 2)) * cSVV) + ((phi4 / (self.T ** 3)) * cVVV))
+        
+        callvalue = f0 + f1 * self.vvol + f2 * self.vvol ** 2
+        
+        if self.option == 'call':
+            result = callvalue
+        if self.option == 'put':
+            result = callvalue - (self.S * np.exp((self.b - self.r) * self.T)) + (self.K * np.exp(-self.r * self.T))
+        
+        return result
+    
+
 
 sabr_df_dict = {'df_F':100,
                 'df_X':70,
@@ -1382,7 +1500,20 @@ class SABRVolatility(Pricer):
         
   
     def price(self, option=None):
-        
+        """
+        Calculate Black_76 option price using calibrated vol
+
+        Parameters
+        ----------
+        option : Str
+            Option type. 'put' or 'call'. The default is 'put'.
+
+        Returns
+        -------
+        Float
+            Option price.
+
+        """
         if option is None:
             option = self.option
         else:
