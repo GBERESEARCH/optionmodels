@@ -1,10 +1,25 @@
 import math
 import random
+import time
 import numpy as np
 import operator as op
 import scipy.stats as si
-from functools import reduce
+from functools import reduce, wraps
 from scipy.stats import norm
+
+
+def timethis(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        r = func(*args, **kwargs)
+        end = time.perf_counter()
+        for k, v in kwargs.items():
+            if k == 'timing' and v == True:
+                print('{}.{} : {} milliseconds'.format(func.__module__, func.__name__, 
+                                                       round((end - start)*1e3, 2)))
+        return r
+    return wrapper
 
 
 df_dict = {'df_S':100,
@@ -32,23 +47,25 @@ df_dict = {'df_S':100,
            'df_cm':5.0,
            'df_epsilon':0.0001,
            'df_refresh':True,
+           'df_timing':False,
            'df_params_list':['S', 'K', 'T', 'r', 'q', 'sigma', 'option', 'steps', 
                              'steps_itt', 'nodes', 'vvol', 'simulations', 'output_flag', 
                              'american', 'step', 'state', 'skew', 'sig0', 'sigLR', 
-                             'halflife', 'rho', 'cm', 'epsilon']}
+                             'halflife', 'rho', 'cm', 'epsilon', 'timing']}
 
 
 class Pricer():
     
-    def __init__(self, S=df_dict['df_S'], F=df_dict['df_F'], K=df_dict['df_K'], T=df_dict['df_T'], r=df_dict['df_r'], 
-             q=df_dict['df_q'], sigma=df_dict['df_sigma'], option=df_dict['df_option'], 
-             steps=df_dict['df_steps'], steps_itt=df_dict['df_steps_itt'], nodes=df_dict['df_nodes'], vvol=df_dict['df_vvol'], 
-             simulations=df_dict['df_simulations'], output_flag=df_dict['df_output_flag'], 
-             american=df_dict['df_american'], step=df_dict['df_step'], state=df_dict['df_state'], 
-             skew=df_dict['df_skew'], sig0=df_dict['df_sig0'], sigLR=df_dict['df_sigLR'], 
-             halflife=df_dict['df_halflife'], rho=df_dict['df_rho'], cm=df_dict['df_cm'], 
-             epsilon=df_dict['df_epsilon'], refresh=df_dict['df_refresh'], df_params_list=df_dict['df_params_list'], 
-             df_dict=df_dict):
+    def __init__(self, S=df_dict['df_S'], F=df_dict['df_F'], K=df_dict['df_K'], 
+                 T=df_dict['df_T'], r=df_dict['df_r'], q=df_dict['df_q'], sigma=df_dict['df_sigma'], 
+                 option=df_dict['df_option'], steps=df_dict['df_steps'], steps_itt=df_dict['df_steps_itt'], 
+                 nodes=df_dict['df_nodes'], vvol=df_dict['df_vvol'], simulations=df_dict['df_simulations'], 
+                 output_flag=df_dict['df_output_flag'], american=df_dict['df_american'], 
+                 step=df_dict['df_step'], state=df_dict['df_state'], skew=df_dict['df_skew'], 
+                 sig0=df_dict['df_sig0'], sigLR=df_dict['df_sigLR'], halflife=df_dict['df_halflife'], 
+                 rho=df_dict['df_rho'], cm=df_dict['df_cm'], epsilon=df_dict['df_epsilon'], 
+                 refresh=df_dict['df_refresh'], timing=df_dict['df_timing'], 
+                 df_params_list=df_dict['df_params_list'], df_dict=df_dict):
         
         self.S = S # Spot price
         self.F = F # Forward price
@@ -79,8 +96,9 @@ class Pricer():
         self.refresh = refresh # Whether to refresh parameters, set to False if called from another function
         self.df_params_list = df_params_list # List of default parameters
         self.df_dict = df_dict # Dictionary of default parameters
-        
+        self.timing = timing
     
+        
     def _refresh_params(self, **kwargs):
         """
         Set parameters for use in various pricing functions
@@ -155,8 +173,9 @@ class Pricer():
         return numer // denom  # or / in Python 2
 
 
+    @timethis
     def black_scholes_merton(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
-                             option=None):
+                             option=None, timing=None):
         """
         Black-Scholes-Merton Option price 
 
@@ -184,11 +203,14 @@ class Pricer():
 
         """
         if self.refresh == True:
-            self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, option=option)
+            self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, option=option, 
+                                 timing=timing)
         
         carry = np.exp((self.b - self.r) * self.T)
-        d1 = (np.log(self.S / self.K) + (self.b + (0.5 * self.sigma ** 2)) * self.T) / (self.sigma * np.sqrt(self.T))
-        d2 = (np.log(self.S / self.K) + (self.b - (0.5 * self.sigma ** 2)) * self.T) / (self.sigma * np.sqrt(self.T))
+        d1 = ((np.log(self.S / self.K) + (self.b + (0.5 * self.sigma ** 2)) * self.T) / 
+              (self.sigma * np.sqrt(self.T)))
+        d2 = ((np.log(self.S / self.K) + (self.b - (0.5 * self.sigma ** 2)) * self.T) / 
+              (self.sigma * np.sqrt(self.T)))
           
         # Cumulative normal distribution function
         Nd1 = si.norm.cdf(d1, 0.0, 1.0)
@@ -206,8 +228,9 @@ class Pricer():
         return opt_price
     
     
+    @timethis
     def black_scholes_merton_vega(self, S=None, K=None, T=None, r=None, q=None, 
-                                  sigma=None, option=None):
+                                  sigma=None, option=None, timing=None):
         """
         Black-Scholes-Merton Option Vega 
 
@@ -235,18 +258,21 @@ class Pricer():
 
         """  
         if self.refresh == True:
-            self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, option=option)
+            self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, option=option, 
+                                 timing=timing)
 
         carry = np.exp((self.b - self.r) * self.T)
-        d1 = (np.log(self.S / self.K) + (self.b + (0.5 * self.sigma ** 2)) * self.T) / (self.sigma * np.sqrt(self.T))
+        d1 = ((np.log(self.S / self.K) + (self.b + (0.5 * self.sigma ** 2)) * self.T) / 
+              (self.sigma * np.sqrt(self.T)))
         nd1 = (1 / np.sqrt(2 * np.pi)) * (np.exp(-d1 ** 2 * 0.5))
         
         opt_vega = self.S * carry * nd1 * np.sqrt(self.T)
          
         return opt_vega
     
-   
-    def black_76(self, F=None, K=None, T=None, r=None, sigma=None, option=None):
+    
+    @timethis
+    def black_76(self, F=None, K=None, T=None, r=None, sigma=None, option=None, timing=None):
         """
         Black 76 Futures Option price 
 
@@ -274,7 +300,7 @@ class Pricer():
 
         """
 
-        self._refresh_params(F=F, K=K, T=T, r=r, sigma=sigma, option=option)
+        self._refresh_params(F=F, K=K, T=T, r=r, sigma=sigma, option=option, timing=timing)
         
         carry = np.exp(-self.r * self.T)
         d1 = (np.log(self.F / self.K) + (0.5 * self.sigma ** 2) * self.T) / (self.sigma * np.sqrt(self.T))
@@ -296,8 +322,9 @@ class Pricer():
         return opt_price
     
     
+    @timethis
     def european_binomial(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
-                          steps=None, option=None):
+                          steps=None, option=None, timing=None):
         """
         European Binomial Option price.
 
@@ -328,7 +355,7 @@ class Pricer():
         """
         
         self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
-                             option=option)
+                             option=option, timing=timing)
         
         dt = self.T / self.steps
         u = np.exp(self.sigma * np.sqrt(dt))
@@ -349,10 +376,11 @@ class Pricer():
                                
         return np.exp(-self.r * self.T) * val                     
                 
-   
+    
+    @timethis
     def cox_ross_rubinstein_binomial(self, S=None, K=None, T=None, r=None, q=None, 
                                      sigma=None, steps=None, option=None, output_flag=None, 
-                                     american=None):
+                                     american=None, timing=None):
         """
         Cox-Ross-Rubinstein Binomial model
 
@@ -392,7 +420,8 @@ class Pricer():
         """
         
         self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
-                             option=option, output_flag=output_flag, american=american)
+                             option=option, output_flag=output_flag, american=american, 
+                             timing=timing)
                 
         z = 1
         if self.option == 'put':
@@ -446,10 +475,11 @@ class Pricer():
                                
         return result
     
-   
+    
+    @timethis
     def leisen_reimer_binomial(self, S=None, K=None, T=None, r=None, q=None, 
                                      sigma=None, steps=None, option=None, output_flag=None, 
-                                     american=None):
+                                     american=None, timing=None):
         """
         Leisen Reimer Binomial
 
@@ -488,7 +518,8 @@ class Pricer():
         """
          
         self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
-                             option=option, output_flag=output_flag, american=american)
+                             option=option, output_flag=output_flag, american=american, 
+                             timing=timing)
         
         z = 1
         if self.option == 'put':
@@ -548,8 +579,10 @@ class Pricer():
         return result        
     
     
+    @timethis
     def trinomial_tree(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
-                       steps=None, option=None, output_flag=None, american=None):
+                       steps=None, option=None, output_flag=None, american=None, 
+                       timing=None):
         """
         Trinomial Tree
 
@@ -568,7 +601,7 @@ class Pricer():
         sigma : Float
             Implied Volatility.  The default is 0.2 (20%).
         steps : Int
-            Number of time steps. The default is 1000. 
+            Number of time steps. The default is 1000.
         option : Str
             Type of option, 'put' or 'call'. The default is 'call'.
         output_flag : Str
@@ -589,7 +622,8 @@ class Pricer():
         """
         
         self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
-                             option=option, output_flag=output_flag, american=american)
+                             option=option, output_flag=output_flag, american=american, 
+                             timing=timing)
                 
         z = 1
         if self.option == 'put':
@@ -647,10 +681,11 @@ class Pricer():
                                
         return result                     
     
-   
+    
+    @timethis
     def implied_trinomial_tree(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
                        steps_itt=None, option=None, output_flag=None, step=None, state=None, 
-                       skew=None):
+                       skew=None, timing=None):
         """
         Implied Trinomial Tree
 
@@ -706,7 +741,7 @@ class Pricer():
         
         self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps_itt=steps_itt, 
                              option=option, output_flag=output_flag, step=step, 
-                             state=state, skew=skew)
+                             state=state, skew=skew, timing=timing)
                 
         z = 1
         if self.option == 'put':
@@ -827,9 +862,11 @@ class Pricer():
                                
         return result    
     
-   
+    
+    @timethis
     def explicit_finite_difference(self, S=None, K=None, T=None, r=None, q=None, 
-                                   sigma=None, nodes=None, option=None, american=None):
+                                   sigma=None, nodes=None, option=None, american=None, 
+                                   timing=None):
         """
         Explicit Finite Difference
 
@@ -862,7 +899,7 @@ class Pricer():
         """
         
         self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, nodes=nodes, 
-                             option=option, american=american)
+                             option=option, american=american, timing=timing)
         
         z = 1
         if self.option == 'put':
@@ -904,10 +941,11 @@ class Pricer():
     
         return result          
     
-  
+    
+    @timethis
     def implicit_finite_difference(self, S=None, K=None, T=None, r=None, q=None, 
                                    sigma=None, steps=None, nodes=None, option=None, 
-                                   american=None):
+                                   american=None, timing=None):
         """
         Implicit Finite Difference
         # Slow to converge - steps has small effect, need nodes 3000+
@@ -944,7 +982,7 @@ class Pricer():
         """
         
         self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
-                             nodes=nodes, option=option, american=american)
+                             nodes=nodes, option=option, american=american, timing=timing)
         
         z = 1
         if self.option == 'put':
@@ -986,9 +1024,10 @@ class Pricer():
         return result   
     
     
+    @timethis
     def explicit_finite_difference_lns(self, S=None, K=None, T=None, r=None, q=None, 
                                        sigma=None, steps=None, nodes=None, option=None, 
-                                       american=None):
+                                       american=None, timing=None):
         """
         Explicit Finite Differences - rewrite BS-PDE in terms of ln(S)
 
@@ -1023,7 +1062,7 @@ class Pricer():
         """
         
         self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
-                             nodes=nodes, option=option, american=american)
+                             nodes=nodes, option=option, american=american, timing=timing)
           
         z = 1
         if self.option == 'put':
@@ -1056,9 +1095,10 @@ class Pricer():
     
         return result   
     
-   
+    
+    @timethis
     def crank_nicolson(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
-                       steps=None, nodes=None, option=None, american=None):
+                       steps=None, nodes=None, option=None, american=None, timing=None):
         """
         Crank Nicolson
 
@@ -1093,7 +1133,7 @@ class Pricer():
         """
         
         self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
-                             nodes=nodes, option=option, american=american)
+                             nodes=nodes, option=option, american=american, timing=timing)
                 
         z = 1
         if self.option == 'put':
@@ -1138,8 +1178,9 @@ class Pricer():
         return result   
     
     
+    @timethis
     def european_monte_carlo(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
-                             simulations=None, option=None):
+                             simulations=None, option=None, timing=None):
         """
         Standard Monte Carlo
 
@@ -1170,7 +1211,7 @@ class Pricer():
         """
         
         self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, simulations=simulations, 
-                             option=option)
+                             option=option, timing=timing)
          
         Drift = (self.b - (self.sigma ** 2) / 2) * self.T
         sigmarT = self.sigma * np.sqrt(self.T)
@@ -1188,10 +1229,11 @@ class Pricer():
         
         return result
     
-   
+    
+    @timethis
     def european_monte_carlo_with_greeks(self, S=None, K=None, T=None, r=None, q=None, 
                                          sigma=None, simulations=None, option=None, 
-                                         output_flag=None):
+                                         output_flag=None, timing=None):
         """
         Standard Monte Carlo with Greeks
 
@@ -1232,7 +1274,7 @@ class Pricer():
         """
         
         self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, simulations=simulations, 
-                             option=option, output_flag=output_flag)
+                             option=option, output_flag=output_flag, timing=timing)
                 
         Drift = (self.b - (self.sigma ** 2) / 2) * self.T
         sigmarT = self.sigma * np.sqrt(self.T)
@@ -1290,9 +1332,10 @@ class Pricer():
                 
         return result
     
-   
+    
+    @timethis
     def hull_white_87(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
-                      vvol=None, option=None):
+                      vvol=None, option=None, timing=None):
         """
         Hull White 1987 - Uncorrelated Stochastic Volatility.
 
@@ -1322,14 +1365,14 @@ class Pricer():
 
         """
         
-        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, vvol=vvol, option=option)
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, vvol=vvol, option=option, 
+                             timing=timing)
         
         k = self.vvol ** 2 * self.T
         ek = np.exp(k)
         
         d1 = (np.log(self.S / self.K) + (self.b + (self.sigma ** 2) / 2) * self.T) / (self.sigma * np.sqrt(self.T))
         d2 = d1 - self.sigma * np.sqrt(self.T)
-        # Cumulative normal distribution function
         Nd1 = si.norm.cdf(d1, 0.0, 1.0)
            
         cgbs = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
@@ -1353,8 +1396,9 @@ class Pricer():
         return result
 
 
+    @timethis
     def hull_white_88(self, S=None, K=None, T=None, r=None, q=None, sig0=None, sigLR=None,
-                      halflife=None, vvol=None, rho=None, option=None):
+                      halflife=None, vvol=None, rho=None, option=None, timing=None):
         """
         Hull White 1988 - Correlated Stochastic Volatility.
 
@@ -1391,7 +1435,7 @@ class Pricer():
         """
         
         self._refresh_params(S=S, K=K, T=T, r=r, q=q, sig0=sig0, sigLR=sigLR, halflife=halflife, 
-                             vvol=vvol, rho=rho, option=option)
+                             vvol=vvol, rho=rho, option=option, timing=timing)
 
         beta = -np.log(2) / self.halflife # Find constant, beta, from Half-life
         a = -beta * (self.sigLR ** 2) # Find constant, a, from long run volatility
@@ -1461,6 +1505,10 @@ class Pricer():
     
 
 
+
+###############################################################################
+
+
 sabr_df_dict = {'df_F':100,
                 'df_X':70,
                 'df_T':0.5,
@@ -1502,33 +1550,28 @@ class SABRVolatility(Pricer):
         self.option = option # Option type, call or put
         self.refresh = False # Whether to refresh parameters, set to False if called from another function
         self.sabr_df_dict = sabr_df_dict # Dictionary of default SABR parameters
+    
+    
+    @timethis
+    def price(self, option=None, timing=None):
         
-  
-    def price(self, option=None):
-        """
-        Calculate Black_76 option price using calibrated vol
-
-        Parameters
-        ----------
-        option : Str
-            Option type. 'put' or 'call'. The default is 'put'.
-
-        Returns
-        -------
-        Float
-            Option price.
-
-        """
         if option is None:
             option = self.option
         else:
             self.option=option
         
+        if timing is None:
+            timing = self.timing
+        else:
+            self.timing = timing    
+            
+        
         return self.black_76(F=self.F, K=self.X, T=self.T, r=self.r, sigma=self.black_vol, 
-                             option=self.option) 
+                             option=self.option, timing=self.timing) 
     
- 
-    def calibrate(self):
+    
+    @timethis
+    def calibrate(self, timing=None):
         """
         Run the SABR calibration
 
@@ -1538,6 +1581,12 @@ class SABRVolatility(Pricer):
             Black-76 equivalent SABR volatility.
 
         """
+        
+        if timing is None:
+            timing = self.timing
+        else:
+            self.timing = timing
+        
         self.black_vol = self._alpha_sabr(self._find_alpha())
         
         return self.black_vol
@@ -1693,11 +1742,12 @@ class ImpliedVol(Pricer):
     
     def __init__(self):
         super().__init__(self) # Inherit methods from Pricer class
-        self.refresh = False # Whether to refresh parameters, set to False if called from another function
+        self.refresh = True # Whether to refresh parameters, set to False if called from another function
 
-   
+    
+    @timethis
     def implied_vol_newton_raphson(self, S=None, K=None, T=None, r=None, q=None, 
-                                   cm=None, epsilon=None, option=None):
+                                   cm=None, epsilon=None, option=None, timing=None):
         """
         Finds implied volatility using Newton-Raphson method - needs knowledge of 
         partial derivative of option pricing formula with respect to volatility (vega)
@@ -1728,23 +1778,26 @@ class ImpliedVol(Pricer):
 
         """
         
-        self._refresh_params(S=S, K=K, T=T, r=r, q=q, cm=cm, epsilon=epsilon, option=option)
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, cm=cm, epsilon=epsilon, option=option, 
+                             timing=timing)
                 
         # Manaster and Koehler seed value
         vi = np.sqrt(abs(np.log(self.S / self.K) + self.r * self.T) * 2 / self.T)
         ci = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, q=self.q, 
-                                       sigma=vi, option=self.option)    
+                                       sigma=vi, option=self.option, timing=False)    
         vegai = self.black_scholes_merton_vega(S=self.S, K=self.K, T=self.T, r=self.r, 
-                                               q=self.q, sigma=vi, option=self.option)
+                                               q=self.q, sigma=vi, option=self.option, 
+                                               timing=False)
         mindiff = abs(self.cm - ci)
     
         while abs(self.cm - ci) >= self.epsilon and abs(self.cm - ci) <= mindiff:
             vi = vi - (ci - self.cm) / vegai
             ci = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
-                                           q=self.q, sigma=vi, option=self.option)
+                                           q=self.q, sigma=vi, option=self.option, 
+                                           timing=False)
             vegai = self.black_scholes_merton_vega(S=self.S, K=self.K, T=self.T, 
                                                    r=self.r, q=self.q, sigma=vi, 
-                                                   option=self.option)
+                                                   option=self.option, timing=False)
             mindiff = abs(self.cm - ci)
             
         if abs(self.cm - ci) < self.epsilon:
@@ -1754,9 +1807,10 @@ class ImpliedVol(Pricer):
         
         return result
     
-
+    
+    @timethis
     def implied_vol_bisection(self, S=None, K=None, T=None, r=None, q=None, cm=None, 
-                              epsilon=None, option=None):
+                              epsilon=None, option=None, timing=None):
         """
         Finds implied volatility using bisection method.
 
@@ -1787,7 +1841,8 @@ class ImpliedVol(Pricer):
 
         """
         
-        self._refresh_params(S=S, K=K, T=T, r=r, q=q, cm=cm, epsilon=epsilon, option=option)
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, cm=cm, epsilon=epsilon, option=option, 
+                             timing=timing)
         
         vLow = 0.005
         vHigh = 4
@@ -1822,9 +1877,10 @@ class ImpliedVol(Pricer):
             
         return result
 
-   
+    
+    @timethis
     def implied_vol_naive(self, S=None, K=None, T=None, r=None, q=None, cm=None, 
-                          epsilon=None, option=None):
+                          epsilon=None, option=None, timing=None):
         """
         Finds implied volatility using simple naive iteration, increasing precision 
         each time the difference changes sign.
@@ -1856,7 +1912,8 @@ class ImpliedVol(Pricer):
 
         """
         
-        self._refresh_params(S=S, K=K, T=T, r=r, q=q, cm=cm, epsilon=epsilon, option=option)
+        self._refresh_params(S=S, K=K, T=T, r=r, q=q, cm=cm, epsilon=epsilon, option=option, 
+                             timing=timing)
         
         vi = 0.2
         ci = self.black_scholes_merton(S=self.S, K=self.K, T=self.T, r=self.r, 
@@ -1906,11 +1963,12 @@ class ImpliedVol(Pricer):
 
 class Tools():
     
-    def __init__(self):
-        pass
+    def __init__(self, timing=False):
+        self.timing = timing
    
-
-    def cholesky_decomposition(self, R):
+   
+    @timethis
+    def cholesky_decomposition(self, R, timing=None):
         """
         Cholesky Decomposition.
         Return M in M * M.T = R where R is a symmetric positive definite correlation matrix
@@ -1926,6 +1984,10 @@ class Tools():
             Matrix decomposition.
 
         """
+        if timing is None:
+            timing = self.timing
+        else:
+            self.timing = timing    
                 
         # Number of columns in input correlation matrix R
         n = len(R[0])
