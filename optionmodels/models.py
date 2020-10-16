@@ -5,6 +5,7 @@ import numpy as np
 import operator as op
 import scipy.stats as si
 from functools import reduce, wraps
+from scipy.special import comb
 from scipy.stats import norm
 
 
@@ -52,6 +53,17 @@ df_dict = {'df_S':100,
                              'steps_itt', 'nodes', 'vvol', 'simulations', 'output_flag', 
                              'american', 'step', 'state', 'skew', 'sig0', 'sigLR', 
                              'halflife', 'rho', 'cm', 'epsilon', 'timing']}
+
+
+sabr_df_dict = {'df_F':100,
+                'df_X':70,
+                'df_T':0.5,
+                'df_r':0.05,
+                'df_atmvol':0.3, 
+                'df_beta':0.9999, 
+                'df_volvol':0.5, 
+                'df_rho':-0.4,
+                'df_option':'put'}
 
 
 class Pricer():
@@ -138,41 +150,8 @@ class Pricer():
                 self.__dict__[key] = val
                 
         return self        
+        
     
-    
-    def _n_choose_r(self, n, r):
-        """
-        Binomial Coefficients. n choose r
-        Number of ways to choose an (unordered) subset of r elements from a fixed 
-        set of n elements.
-
-        Parameters
-        ----------
-        n : Int
-            Set of elements.
-        r : Int
-            Subset of elements.
-
-        Returns
-        -------
-        Int
-            Binomial coefficient.
-
-        """
-        
-        # Due to symmetry of the binomial coefficient, set r to optimise calculation
-        r = min(r, n-r)
-        
-        # Numerator is the descending product from n to n+1-r
-        numer = reduce(op.mul, range(n, n-r, -1), 1)
-        
-        # Denominator is the product from 1 to r
-        denom = reduce(op.mul, range(1, r+1), 1)
-        
-        # Binomial coefficient is calculated by dividing these two. 
-        return numer // denom  # or / in Python 2
-
-
     @timethis
     def black_scholes_merton(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
                              option=None, timing=None):
@@ -327,7 +306,8 @@ class Pricer():
                           steps=None, option=None, timing=None):
         """
         European Binomial Option price.
-
+        Combinatorial function won't calculate with values much over 1000
+    
         Parameters
         ----------
         S : Float
@@ -367,11 +347,11 @@ class Pricer():
         
         if self.option == 'call':
             for j in range(a, self.steps + 1):
-                val = val + (self._n_choose_r(self.steps, j) * (p ** j) * ((1 - p) ** (self.steps - j)) * 
+                val = val + (comb(self.steps, j) * (p ** j) * ((1 - p) ** (self.steps - j)) * 
                              ((self.S * (u ** j) * (d ** (self.steps - j))) - self.K))
         if self.option == 'put':
             for j in range(0, a):
-                val = val + (self._n_choose_r(self.steps, j) * (p ** j) * ((1 - p) ** (self.steps - j)) * 
+                val = val + (comb(self.steps, j) * (p ** j) * ((1 - p) ** (self.steps - j)) * 
                              (self.K - ((self.S * (u ** j)) * (d ** (self.steps - j)))))
                                
         return np.exp(-self.r * self.T) * val                     
@@ -1502,239 +1482,6 @@ class Pricer():
             result = callvalue - (self.S * np.exp((self.b - self.r) * self.T)) + (self.K * np.exp(-self.r * self.T))
         
         return result
-    
-
-
-
-###############################################################################
-
-
-sabr_df_dict = {'df_F':100,
-                'df_X':70,
-                'df_T':0.5,
-                'df_r':0.05,
-                'df_atmvol':0.3, 
-                'df_beta':0.9999, 
-                'df_volvol':0.5, 
-                'df_rho':-0.4,
-                'df_option':'put'}
-
-
-class SABRVolatility(Pricer):
-    """
-    Stochastic, Alpha, Beta, Rho model
-    
-    Extension of Black 76 model to include an easily implementable stochastic volatility model
-    
-    Beta will typically be chosen a priori according to how traders observe market prices:
-        e.g. In FX markets, standard to assume lognormal terms, Beta = 1
-             In some Fixed Income markets traders prefer to assume normal terms, Beta = 0
-    
-    Alpha will need to be calibrated to ATM volatility         
-             
-    """
-    
-    def __init__(self, F=sabr_df_dict['df_F'], X=sabr_df_dict['df_X'], T=sabr_df_dict['df_T'], 
-                 r=sabr_df_dict['df_r'], atmvol=sabr_df_dict['df_atmvol'], beta=sabr_df_dict['df_beta'], 
-                 volvol=sabr_df_dict['df_volvol'], rho=sabr_df_dict['df_rho'], option=sabr_df_dict['df_option'], 
-                 sabr_df_dict=sabr_df_dict):
-        super().__init__(self) # Inherit methods from Pricer class
-        self.F = F # Forward price
-        self.X = X # Strike price
-        self.T = T # Time to maturity
-        self.r = r # Interest rate
-        self.atmvol = atmvol # To be calibrated to Black 76 At The Money volatility
-        self.beta = beta # Normal or Lognormal Stochastic Volatility
-        self.volvol = volvol # Volatility of volatility
-        self.rho = rho # Correlation between volatility and underlying asset
-        self.option = option # Option type, call or put
-        self.refresh = False # Whether to refresh parameters, set to False if called from another function
-        self.sabr_df_dict = sabr_df_dict # Dictionary of default SABR parameters
-    
-    
-    @timethis
-    def price(self, option=None, timing=None):
-        
-        if option is None:
-            option = self.option
-        else:
-            self.option=option
-        
-        if timing is None:
-            timing = self.timing
-        else:
-            self.timing = timing    
-            
-        
-        return self.black_76(F=self.F, K=self.X, T=self.T, r=self.r, sigma=self.black_vol, 
-                             option=self.option, timing=self.timing) 
-    
-    
-    @timethis
-    def calibrate(self, timing=None):
-        """
-        Run the SABR calibration
-
-        Returns
-        -------
-        Float
-            Black-76 equivalent SABR volatility.
-
-        """
-        
-        if timing is None:
-            timing = self.timing
-        else:
-            self.timing = timing
-        
-        self.black_vol = self._alpha_sabr(self._find_alpha())
-        
-        return self.black_vol
-    
-    
-    def _alpha_sabr(self, alpha):
-        """
-        The SABR skew vol function
-
-        Parameters
-        ----------
-        Alpha : Float
-            Alpha value.
-
-        Returns
-        -------
-        result : Float
-            Black-76 equivalent SABR volatility.
-
-        """
-                        
-        dSABR = np.zeros(4)
-        dSABR[1] = (alpha / ((self.F * self.X) ** ((1 - self.beta) / 2) * (1 + (((1 - self.beta) ** 2) / 24) * 
-                    (np.log(self.F / self.X) ** 2) + ((1 - self.beta) ** 4 / 1920) * (np.log(self.F / self.X) ** 4))))
-        
-        if abs(self.F - self.X) > 10 ** -8:
-            sabrz = (self.volvol / alpha) * (self.F * self.X) ** ((1 - self.beta) / 2) * np.log(self.F / self.X)
-            y = (np.sqrt(1 - 2 * self.rho * sabrz + sabrz ** 2) + sabrz - self.rho) / (1 - self.rho)
-            if abs(y - 1) < 10 ** -8:
-                dSABR[2] = 1
-            elif y > 0:
-                dSABR[2] = sabrz / np.log(y)
-            else:
-                dSABR[2] = 1
-        else:
-            dSABR[2] = 1
-            
-        dSABR[3] = (1 + ((((1 - self.beta) ** 2 / 24) * alpha ** 2 / ((self.F * self.X) ** (1 - self.beta))) + 
-                         0.25 * self.rho * self.beta * self.volvol * alpha / ((self.F * self.X) ** ((1 - self.beta) / 2)) + 
-                         (2 - 3 * self.rho ** 2) * self.volvol ** 2 / 24) * self.T)
-        
-        result = dSABR[1] * dSABR[2] * dSABR[3]
-        
-        return result
-    
-    
-    def _find_alpha(self):
-        """
-        Find alpha feeding values to _cube_root method.
-
-        Returns
-        -------
-        result : Float
-            Smallest positive root.
-
-        """
-        # Alpha is a function of atm vol etc
-        
-        self.alpha = self._cube_root(((1 - self.beta) ** 2 * self.T / (24 * self.F ** (2 - 2 * self.beta))), 
-                                     (0.25 * self.rho * self.volvol * self.beta * self.T / self.F ** (1 - self.beta)), 
-                                     (1 + (2 - 3 * self.rho ** 2) / 24 * self.volvol ** 2 * self.T), 
-                                     (-self.atmvol * self.F ** (1 - self.beta)))
-        
-        return self.alpha
-    
-    
-    def _cube_root(self, cubic, quadratic, linear, constant):
-        """
-        Finds the smallest positive root of the input cubic polynomial algorithm 
-        from Numerical Recipes
-
-        Parameters
-        ----------
-        cubic : Float
-            3rd order term of input polynomial.
-        quadratic : Float
-            2nd order term of input polynomial.
-        linear : Float
-            Linear term of input polynomial.
-        constant : Float
-            Constant term of input polynomial.
-
-        Returns
-        -------
-        result : Float
-            Smallest positive root.
-
-        """
-        a = quadratic / cubic
-        b = linear / cubic
-        C = constant / cubic
-        Q = (a ** 2 - 3 * b) / 9
-        r = (2 * a ** 3 - 9 * a * b + 27 * C) / 54
-        roots = np.zeros(4)
-        
-        if r ** 2 - Q ** 3 >= 0:
-            cap_A = -np.sign(r) * (abs(r) + np.sqrt(r ** 2 - Q ** 3)) ** (1 / 3)
-            if cap_A == 0:
-                cap_B = 0
-            else:
-                cap_B = Q / cap_A
-            result = cap_A + cap_B - a / 3
-        else:
-            theta = self._arccos(r / Q ** 1.5)
-            
-            # The three roots
-            roots[1] = - 2 * np.sqrt(Q) * math.cos(theta / 3) - a / 3
-            roots[2] = - 2 * np.sqrt(Q) * math.cos(theta / 3 + 2.0943951023932) - a / 3
-            roots[3] = - 2 * np.sqrt(Q) * math.cos(theta / 3 - 2.0943951023932) - a / 3
-            
-            # locate that one which is the smallest positive root
-            # assumes there is such a root (true for SABR model)
-            # there is always a small positive root
-            
-            if roots[1] > 0:
-                result = roots[1]
-            elif roots[2] > 0:
-                result = roots[2]
-            elif roots[3] > 0:
-                result = roots[3]
-        
-            if roots[2] > 0 and roots[2] < result:
-                result = roots[2]
-            
-            if roots[3] > 0 and roots[3] < result:
-                result = roots[3]
-                
-        return result
-    
-    
-    def _arccos(self, y):
-        """
-        Inverse Cosine method
-
-        Parameters
-        ----------
-        y : Float
-            Input value.
-
-        Returns
-        -------
-        result : Float
-            Arc Cosine of input value.
-
-        """
-        result = np.arctan(-y / np.sqrt(-y * y + 1)) + 2 * np.arctan(1)
-        
-        return result
 
 
 
@@ -1958,6 +1705,224 @@ class ImpliedVol(Pricer):
         result = vi    
             
         return result
+    
+
+
+class SABRVolatility(Pricer):
+    """
+    Stochastic, Alpha, Beta, Rho model
+    
+    Extension of Black 76 model to include an easily implementable stochastic volatility model
+    
+    Beta will typically be chosen a priori according to how traders observe market prices:
+        e.g. In FX markets, standard to assume lognormal terms, Beta = 1
+             In some Fixed Income markets traders prefer to assume normal terms, Beta = 0
+    
+    Alpha will need to be calibrated to ATM volatility         
+             
+    """
+    
+    def __init__(self, F=sabr_df_dict['df_F'], X=sabr_df_dict['df_X'], T=sabr_df_dict['df_T'], 
+                 r=sabr_df_dict['df_r'], atmvol=sabr_df_dict['df_atmvol'], beta=sabr_df_dict['df_beta'], 
+                 volvol=sabr_df_dict['df_volvol'], rho=sabr_df_dict['df_rho'], option=sabr_df_dict['df_option'], 
+                 sabr_df_dict=sabr_df_dict):
+        super().__init__(self) # Inherit methods from Pricer class
+        self.F = F # Forward price
+        self.X = X # Strike price
+        self.T = T # Time to maturity
+        self.r = r # Interest rate
+        self.atmvol = atmvol # To be calibrated to Black 76 At The Money volatility
+        self.beta = beta # Normal or Lognormal Stochastic Volatility
+        self.volvol = volvol # Volatility of volatility
+        self.rho = rho # Correlation between volatility and underlying asset
+        self.option = option # Option type, call or put
+        self.refresh = False # Whether to refresh parameters, set to False if called from another function
+        self.sabr_df_dict = sabr_df_dict # Dictionary of default SABR parameters
+    
+    
+    @timethis
+    def price(self, option=None, timing=None):
+        
+        if option is None:
+            option = self.option
+        else:
+            self.option=option
+        
+        if timing is None:
+            timing = self.timing
+        else:
+            self.timing = timing    
+            
+        
+        return self.black_76(F=self.F, K=self.X, T=self.T, r=self.r, sigma=self.black_vol, 
+                             option=self.option, timing=self.timing) 
+    
+    
+    @timethis
+    def calibrate(self, timing=None):
+        """
+        Run the SABR calibration
+
+        Returns
+        -------
+        Float
+            Black-76 equivalent SABR volatility.
+
+        """
+        
+        if timing is None:
+            timing = self.timing
+        else:
+            self.timing = timing
+        
+        self.black_vol = self._alpha_sabr(self._find_alpha())
+        
+        return self.black_vol
+    
+    
+    def _alpha_sabr(self, alpha):
+        """
+        The SABR skew vol function
+
+        Parameters
+        ----------
+        Alpha : Float
+            Alpha value.
+
+        Returns
+        -------
+        result : Float
+            Black-76 equivalent SABR volatility.
+
+        """
+                        
+        dSABR = np.zeros(4)
+        dSABR[1] = (alpha / ((self.F * self.X) ** ((1 - self.beta) / 2) * (1 + (((1 - self.beta) ** 2) / 24) * 
+                    (np.log(self.F / self.X) ** 2) + ((1 - self.beta) ** 4 / 1920) * (np.log(self.F / self.X) ** 4))))
+        
+        if abs(self.F - self.X) > 10 ** -8:
+            sabrz = (self.volvol / alpha) * (self.F * self.X) ** ((1 - self.beta) / 2) * np.log(self.F / self.X)
+            y = (np.sqrt(1 - 2 * self.rho * sabrz + sabrz ** 2) + sabrz - self.rho) / (1 - self.rho)
+            if abs(y - 1) < 10 ** -8:
+                dSABR[2] = 1
+            elif y > 0:
+                dSABR[2] = sabrz / np.log(y)
+            else:
+                dSABR[2] = 1
+        else:
+            dSABR[2] = 1
+            
+        dSABR[3] = (1 + ((((1 - self.beta) ** 2 / 24) * alpha ** 2 / ((self.F * self.X) ** (1 - self.beta))) + 
+                         0.25 * self.rho * self.beta * self.volvol * alpha / ((self.F * self.X) ** ((1 - self.beta) / 2)) + 
+                         (2 - 3 * self.rho ** 2) * self.volvol ** 2 / 24) * self.T)
+        
+        result = dSABR[1] * dSABR[2] * dSABR[3]
+        
+        return result
+    
+    
+    def _find_alpha(self):
+        """
+        Find alpha feeding values to _cube_root method.
+
+        Returns
+        -------
+        result : Float
+            Smallest positive root.
+
+        """
+        # Alpha is a function of atm vol etc
+        
+        self.alpha = self._cube_root(((1 - self.beta) ** 2 * self.T / (24 * self.F ** (2 - 2 * self.beta))), 
+                                     (0.25 * self.rho * self.volvol * self.beta * self.T / self.F ** (1 - self.beta)), 
+                                     (1 + (2 - 3 * self.rho ** 2) / 24 * self.volvol ** 2 * self.T), 
+                                     (-self.atmvol * self.F ** (1 - self.beta)))
+        
+        return self.alpha
+    
+    
+    def _cube_root(self, cubic, quadratic, linear, constant):
+        """
+        Finds the smallest positive root of the input cubic polynomial algorithm 
+        from Numerical Recipes
+
+        Parameters
+        ----------
+        cubic : Float
+            3rd order term of input polynomial.
+        quadratic : Float
+            2nd order term of input polynomial.
+        linear : Float
+            Linear term of input polynomial.
+        constant : Float
+            Constant term of input polynomial.
+
+        Returns
+        -------
+        result : Float
+            Smallest positive root.
+
+        """
+        a = quadratic / cubic
+        b = linear / cubic
+        C = constant / cubic
+        Q = (a ** 2 - 3 * b) / 9
+        r = (2 * a ** 3 - 9 * a * b + 27 * C) / 54
+        roots = np.zeros(4)
+        
+        if r ** 2 - Q ** 3 >= 0:
+            cap_A = -np.sign(r) * (abs(r) + np.sqrt(r ** 2 - Q ** 3)) ** (1 / 3)
+            if cap_A == 0:
+                cap_B = 0
+            else:
+                cap_B = Q / cap_A
+            result = cap_A + cap_B - a / 3
+        else:
+            theta = self._arccos(r / Q ** 1.5)
+            
+            # The three roots
+            roots[1] = - 2 * np.sqrt(Q) * math.cos(theta / 3) - a / 3
+            roots[2] = - 2 * np.sqrt(Q) * math.cos(theta / 3 + 2.0943951023932) - a / 3
+            roots[3] = - 2 * np.sqrt(Q) * math.cos(theta / 3 - 2.0943951023932) - a / 3
+            
+            # locate that one which is the smallest positive root
+            # assumes there is such a root (true for SABR model)
+            # there is always a small positive root
+            
+            if roots[1] > 0:
+                result = roots[1]
+            elif roots[2] > 0:
+                result = roots[2]
+            elif roots[3] > 0:
+                result = roots[3]
+        
+            if roots[2] > 0 and roots[2] < result:
+                result = roots[2]
+            
+            if roots[3] > 0 and roots[3] < result:
+                result = roots[3]
+                
+        return result
+    
+    
+    def _arccos(self, y):
+        """
+        Inverse Cosine method
+
+        Parameters
+        ----------
+        y : Float
+            Input value.
+
+        Returns
+        -------
+        result : Float
+            Arc Cosine of input value.
+
+        """
+        result = np.arctan(-y / np.sqrt(-y * y + 1)) + 2 * np.arctan(1)
+        
+        return result
 
 
 
@@ -2011,5 +1976,38 @@ class Tools():
                 M[j, i] = U / M[i, i]
         
         return M        
+
+
+    def _n_choose_r(self, n, r):
+        """
+        Binomial Coefficients. n choose r
+        Number of ways to choose an (unordered) subset of r elements from a fixed 
+        set of n elements.
+
+        Parameters
+        ----------
+        n : Int
+            Set of elements.
+        r : Int
+            Subset of elements.
+
+        Returns
+        -------
+        Int
+            Binomial coefficient.
+
+        """
+        
+        # Due to symmetry of the binomial coefficient, set r to optimise calculation
+        r = min(r, n-r)
+        
+        # Numerator is the descending product from n to n+1-r
+        numer = reduce(op.mul, range(n, n-r, -1), 1)
+        
+        # Denominator is the product from 1 to r
+        denom = reduce(op.mul, range(1, r+1), 1)
+        
+        # Binomial coefficient is calculated by dividing these two. 
+        return numer // denom  # or / in Python 2
 
 
