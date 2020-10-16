@@ -412,8 +412,8 @@ class Pricer():
         d = 1 / u
         p = (np.exp(self.b * dt) - d) / (u - d)
         df = np.exp(-self.r * dt)
-        optionvalue = {}
-        returnvalue = {}
+        optionvalue = np.zeros((self.steps + 2))
+        returnvalue = np.zeros((4))
         
         for i in range(self.steps + 1):
             optionvalue[i] = max(0, z * (self.S * (u ** i) * (d ** (self.steps - i)) - self.K))
@@ -520,8 +520,8 @@ class Pricer():
         d = (np.exp(self.b * dt) - p * u) / (1 - p)
         df = np.exp(-self.r * dt)
     
-        optionvalue = {}
-        returnvalue = {}
+        optionvalue = np.zeros((self.steps + 1))
+        returnvalue = np.zeros((3))
         
         for i in range(self.steps + 1):
             optionvalue[i] = max(0, z * (self.S * (u ** i) * (d ** (self.steps - i)) - self.K))
@@ -618,8 +618,8 @@ class Pricer():
               (np.exp(self.sigma * np.sqrt(dt / 2)) - np.exp(-self.sigma * np.sqrt(dt / 2)))) ** 2
         pm = 1 - pu - pd
         df = np.exp(-self.r * dt)
-        optionvalue = {}
-        returnvalue = {}
+        optionvalue = np.zeros((self.steps * 2 + 2))
+        returnvalue = np.zeros((4))
         
         for i in range(2 * self.steps + 1):
             optionvalue[i] = max(0, z * (self.S * (u ** max(i - self.steps, 0)) * 
@@ -642,7 +642,7 @@ class Pricer():
                                    (self.S - self.S * d )) / (0.5 * ((self.S * u) - (self.S * d)))                              
                 returnvalue[3] = optionvalue[0]
                 
-        #returnvalue[3] = (returnvalue[3] - optionvalue[0]) / dt / 365
+        returnvalue[3] = (returnvalue[3] - optionvalue[0]) / dt / 365
         returnvalue[0] = optionvalue[0]
         
         if self.output_flag == 'price':
@@ -709,12 +709,13 @@ class Pricer():
         result : Various
             Depending on output flag:
                 UPM: A matrix of implied up transition probabilities
+                UPni: The implied up transition probability at a single node
                 DPM: A matrix of implied down transition probabilities
-                LVM: A matrix of implied local volatilities
-                ADM: A matrix of Arrow-Debreu prices at a single node
                 DPni: The implied down transition probability at a single node
-                ADni: The Arrow-Debreu price at a single node (at time step - step and state - state)
+                LVM: A matrix of implied local volatilities
                 LVni: The local volatility at a single node
+                ADM: A matrix of Arrow-Debreu prices at a single node
+                ADni: The Arrow-Debreu price at a single node (at time step - step and state - state)
                 price: The European option price.
 
         """
@@ -722,7 +723,12 @@ class Pricer():
         self._refresh_params(S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps_itt=steps_itt, 
                              option=option, output_flag=output_flag, step=step, 
                              state=state, skew=skew, timing=timing)
-                
+        
+        if output_flag is None:
+            self.temp_flag = self.output_flag
+        else:
+            self.temp_flag = output_flag
+        
         z = 1
         if self.option == 'put':
             z = -1
@@ -808,23 +814,24 @@ class Pricer():
                                              (1 - upprob[n, i - 1] - downprob[n, i - 1]) * 
                                              arrowdebreu[n, i - 1] * df + qi * arrowdebreu[n, i] * df)
     
+        self.output_flag = self.temp_flag
     
-        if self.output_flag == 'DPM':
-            result = downprob
-        elif self.output_flag == 'UPM':    
+        if self.output_flag == 'UPM':    
             result = upprob
-        elif self.output_flag == 'DPni':    
-            result = downprob[step, state]
         elif self.output_flag == 'UPni':    
-            result = upprob[step, state]        
-        elif self.output_flag == 'ADM':    
-            result = arrowdebreu
+            result = upprob[self.step, self.state]        
+        elif self.output_flag == 'DPM':
+            result = downprob
+        elif self.output_flag == 'DPni':    
+            result = downprob[self.step, self.state]
         elif self.output_flag == 'LVM': 
             result = localvol
         elif self.output_flag == 'LVni':
-            result = localvol[step, state]
+            result = localvol[self.step, self.state]
+        elif self.output_flag == 'ADM':    
+            result = arrowdebreu
         elif self.output_flag == 'ADni':    
-            result = arrowdebreu[step, state]
+            result = arrowdebreu[self.step, self.state]
         elif self.output_flag == 'price':
             
             # Calculation of option price using the implied trinomial tree
