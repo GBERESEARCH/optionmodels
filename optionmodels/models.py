@@ -689,12 +689,13 @@ class Pricer():
             Type of option. 'put' or 'call'. The default is 'call'.
         output_flag : Str
             UPM: A matrix of implied up transition probabilities
+            UPni: The implied up transition probability at a single node
             DPM: A matrix of implied down transition probabilities
-            LVM: A matrix of implied local volatilities
-            ADM: A matrix of Arrow-Debreu prices at a single node
             DPni: The implied down transition probability at a single node
-            ADni: The Arrow-Debreu price at a single node (at time step - step and state - state)
+            LVM: A matrix of implied local volatilities
             LVni: The local volatility at a single node
+            ADM: A matrix of Arrow-Debreu prices at a single node
+            ADni: The Arrow-Debreu price at a single node (at time step - step and state - state)
             price: The value of the European option
         step : Int
             Time step used for Arrow Debreu price at single node. The default is 5.
