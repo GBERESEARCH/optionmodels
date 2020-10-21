@@ -7,6 +7,23 @@ A collection of option pricing and volatility calibration tools. Each pricer has
 
 &nbsp;
 
+### Installation
+Install from PyPI:
+```
+$ pip install optionmodels
+```
+
+&nbsp;
+
+### Setup
+Import models module
+
+```
+import models as mod
+```
+
+&nbsp;
+
 ### Option pricing models:
   - Black-Scholes-Merton (1973)
   - Black (1976)
@@ -23,6 +40,23 @@ A collection of option pricing and volatility calibration tools. Each pricer has
 
 &nbsp;
 
+Initialise a Pricer object
+```
+opt = mod.Pricer()
+```
+Calculate option price
+```
+opt.black_scholes_merton(**kwargs)
+```
+```
+opt.cox_ross_rubinstein_binomial(timing=True, steps=1000, **kwargs)
+```
+```
+opt.european_monte_carlo(simulations=10000, **kwargs)
+```
+
+&nbsp;
+
 ### Implied Volatility models:
   - Newton-Raphson
   - Bisection
@@ -30,7 +64,36 @@ A collection of option pricing and volatility calibration tools. Each pricer has
 
 &nbsp;
 
+Initialise an ImpliedVol object
+```
+imp = mod.ImpliedVol()
+```
+Extract implied volatility
+```
+vol.implied_vol_newton_raphson(timing=True, **kwargs)
+```
+```
+vol.implied_vol_bisection(**kwargs)
+```
+
+&nbsp;
+
 ### SABR Calibration
+
+&nbsp;
+
+Initialise a SABRVolatility object
+```
+sabr = mod.SABRVolatility()
+```
+Calibrate the model
+```
+sabr.calibrate(**kwargs)
+```
+Price after calibration
+```
+sabr.price(option='put') 
+```
 
 &nbsp;
 
