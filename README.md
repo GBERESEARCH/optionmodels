@@ -28,7 +28,7 @@ import models as mod
   - Black-Scholes-Merton (1973)
   - Black (1976)
   - Cox-Ross-Rubinstein Binomial (1979) 
-  - Leisen-Reimer Binomial(1996)
+  - Leisen-Reimer Binomial (1996)
   - Trinomial tree
   - Explicit Finite Difference
   - Implicit Finite Difference
