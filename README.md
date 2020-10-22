@@ -30,7 +30,6 @@ import models as mod
   - Cox-Ross-Rubinstein Binomial (1979) 
   - Leisen-Reimer Binomial(1996)
   - Trinomial tree
-  - Derman-Kani-Chriss Implied Trinomial (1996)
   - Explicit Finite Difference
   - Implicit Finite Difference
   - Crank-Nicolson Finite Difference
