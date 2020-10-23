@@ -15,11 +15,30 @@ $ pip install optionmodels
 
 &nbsp;
 
+Or to install in new environment using anaconda:
+```
+$ conda create --name optmods
+```
+Activate new environment
+```
+$ activate optmods
+```
+Install Python
+```
+(optmods) $ conda install python=3.7
+```
+Install package
+```
+(optmods) $ pip install optionmodels
+```
+
+&nbsp;
+
 ### Setup
-Import models module
+Import models
 
 ```
-import models as mod
+import optionmodels.models as mod
 ```
 
 &nbsp;
@@ -69,10 +88,10 @@ imp = mod.ImpliedVol()
 ```
 Extract implied volatility
 ```
-vol.implied_vol_newton_raphson(timing=True, **kwargs)
+imp.implied_vol_newton_raphson(timing=True, **kwargs)
 ```
 ```
-vol.implied_vol_bisection(**kwargs)
+imp.implied_vol_bisection(**kwargs)
 ```
 
 &nbsp;
