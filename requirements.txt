@@ -1,6 +1,7 @@
 # Needed packages / versions
-numpy
-scipy
+numpy >= 1.16.2
+scipy >= 1.4.1 
+spyder >= 4.1.5
 
 
 
