@@ -25,7 +25,11 @@ $ activate optmods
 ```
 Install Python
 ```
-(optmods) $ conda install python=3.7
+(optmods) $ conda install python
+```
+Install Spyder
+```
+(optmods) $ conda install spyder=4
 ```
 Install package
 ```
