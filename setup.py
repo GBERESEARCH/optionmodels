@@ -12,7 +12,7 @@ AUTHOR_EMAIL = 'gberesearch@gmail.com'
 URL = 'https://github.com/GBERESEARCH/optionmodels'
 
 LICENSE = 'MIT'
-DESCRIPTION = 'Option Pricing Models'
+DESCRIPTION = 'Option pricing and volatility calibration tools'
 LONG_DESCRIPTION = (HERE / "README.md").read_text()
 LONG_DESC_TYPE = "text/markdown"
 

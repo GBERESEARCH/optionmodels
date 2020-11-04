@@ -108,13 +108,9 @@ Initialise a SABRVolatility object
 ```
 sabr = mod.SABRVolatility()
 ```
-Calibrate the model
+Calibrate the model and return price and / or volatility
 ```
 sabr.calibrate(**kwargs)
-```
-Price after calibration
-```
-sabr.price(option='put') 
 ```
 
 &nbsp;
