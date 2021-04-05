@@ -1,90 +1,26 @@
 import math
 import random
-import time
+import optionmodels.timer as tm
+import optionmodels.models_params as mp
 import numpy as np
 import operator as op
 import scipy.stats as si
-from functools import reduce, wraps
+from functools import reduce
 from operator import itemgetter
 from scipy.special import comb
 from scipy.stats import norm
 
 
-def timethis(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        start = time.perf_counter()
-        r = func(*args, **kwargs)
-        end = time.perf_counter()
-        for k, v in kwargs.items():
-            if k == 'timing' and v == True:
-                print('{}.{} : {} milliseconds'.format(
-                    func.__module__, func.__name__, round((
-                        end - start)*1e3, 2)))
-        return r
-    return wrapper
-
-
-df_dict = {'df_S':100,
-           'df_F':100,
-           'df_K':100,
-           'df_T':0.25,
-           'df_r':0.005,
-           'df_q':0,
-           'df_sigma':0.2,
-           'df_option':'call',
-           'df_steps':1000,
-           'df_steps_itt':10,
-           'df_nodes':100,
-           'df_vvol':0.5,
-           'df_simulations':10000,
-           'df_output_flag':'price',
-           'df_american':False,
-           'df_step':5,
-           'df_state':5,
-           'df_skew':0.0004,
-           'df_sig0':0.09,
-           'df_sigLR':0.0625, 
-           'df_halflife':0.1,
-           'df_rho':0,
-           'df_cm':5.0,
-           'df_epsilon':0.0001,
-           'df_refresh':True,
-           'df_timing':False,
-           'df_params_list':['S', 'F', 'K', 'T', 'r', 'q', 'sigma', 'option', 
-                             'steps', 'steps_itt', 'nodes', 'vvol', 
-                             'simulations', 'output_flag', 'american', 
-                             'step', 'state', 'skew', 'sig0', 'sigLR', 
-                             'halflife', 'rho', 'cm', 'epsilon', 'timing']}
-
-
-sabr_df_dict = {'df_F':100,
-                'df_K':70,
-                'df_T':0.5,
-                'df_r':0.05,
-                'df_atmvol':0.3, 
-                'df_beta':0.9999, 
-                'df_volvol':0.5, 
-                'df_rho':-0.4,
-                'df_option':'put',
-                'df_timing':False, 
-                'df_output_flag':'price'}
-
-
 class Pricer():
     
-    def __init__(
-            self, 
-            df_params_list=df_dict['df_params_list'], 
-            df_dict=df_dict):
-        
-                
-        # List of default parameters
-        self.df_params_list = df_params_list 
+    def __init__(self):
         
         # Dictionary of default parameters
-        self.df_dict = df_dict 
-        
+        self.df_dict = mp.models_params_dict 
+                
+        # List of default parameters
+        self.df_params_list = self.df_dict['df_params_list'] 
+
                
     def _refresh_params(self, **kwargs):
         """
@@ -111,7 +47,7 @@ class Pricer():
             if v is None:
                 
                 # Set it to the default value and assign to the object
-                v = df_dict['df_'+str(k)]
+                v = self.df_dict['df_'+str(k)]
                 self.__dict__[k] = v
             
             # If the value has been provided as an input, assign this 
@@ -161,7 +97,7 @@ class Pricer():
         return kwargs        
     
     
-    @timethis
+    @tm.timer
     def black_scholes_merton(self, S=None, K=None, T=None, r=None, q=None, 
                              sigma=None, option=None, timing=None, 
                              default=None):
@@ -232,7 +168,7 @@ class Pricer():
         return opt_price
     
     
-    @timethis
+    @tm.timer
     def black_scholes_merton_vega(self, S=None, K=None, T=None, r=None, q=None, 
                                   sigma=None, option=None, timing=None, 
                                   default=None):
@@ -292,7 +228,7 @@ class Pricer():
         return opt_vega
     
     
-    @timethis
+    @tm.timer
     def black_76(self, F=None, K=None, T=None, r=None, sigma=None, option=None, 
                  timing=None, default=None):
         """
@@ -308,8 +244,6 @@ class Pricer():
             Time to Maturity.  The default is 0.25 (3 Months).
         r : Float
             Interest Rate. The default is 0.005 (50bps)
-        q : Float
-            Dividend Yield.  The default is 0.
         sigma : Float
             Implied Volatility.  The default is 0.2 (20%).
         option : Str
@@ -359,7 +293,7 @@ class Pricer():
         return opt_price
     
     
-    @timethis
+    @tm.timer
     def european_binomial(self, S=None, K=None, T=None, r=None, q=None, 
                           sigma=None, steps=None, option=None, timing=None, 
                           default=None):
@@ -436,7 +370,7 @@ class Pricer():
         return np.exp(-r * T) * val                     
                 
     
-    @timethis
+    @tm.timer
     def cox_ross_rubinstein_binomial(
             self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
             steps=None, option=None, output_flag=None, american=None, 
@@ -558,15 +492,15 @@ class Pricer():
         if output_flag == 'theta':
             result = returnvalue[3]
         if output_flag == 'all':
-            result = ('Price = '+str(returnvalue[0]),
-                      'Delta = '+str(returnvalue[1]),
-                      'Gamma = '+str(returnvalue[2]),
-                      'Theta = '+str(returnvalue[3]))
+            result = {'Price':returnvalue[0],
+                      'Delta':returnvalue[1],
+                      'Gamma':returnvalue[2],
+                      'Theta':returnvalue[3]}
                                
         return result
     
     
-    @timethis
+    @tm.timer
     def leisen_reimer_binomial(
             self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
             steps=None, option=None, output_flag=None, american=None, 
@@ -698,14 +632,14 @@ class Pricer():
         if output_flag == 'gamma':
             result = returnvalue[2]
         if output_flag == 'all':
-            result = ('Price = '+str(returnvalue[0]),
-                      'Delta = '+str(returnvalue[1]),
-                      'Gamma = '+str(returnvalue[2]))
+            result = {'Price':returnvalue[0],
+                      'Delta':returnvalue[1],
+                      'Gamma':returnvalue[2]}
     
         return result        
     
     
-    @timethis
+    @tm.timer
     def trinomial_tree(
             self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
             steps=None, option=None, output_flag=None, american=None, 
@@ -804,7 +738,7 @@ class Pricer():
                                   + pm * optionvalue[i + 1] 
                                   + pd * optionvalue[i]) * df
                 
-                if self.american == True:
+                if american == True:
                     optionvalue[i] = max(
                         z * (S * (u ** max(i - j, 0)) 
                              * (d ** (max((j - i), 0))) - K), optionvalue[i])
@@ -833,15 +767,15 @@ class Pricer():
         if output_flag == 'theta':
             result = returnvalue[3]
         if output_flag == 'all':
-            result = ('Price = '+str(returnvalue[0]),
-                      'Delta = '+str(returnvalue[1]),
-                      'Gamma = '+str(returnvalue[2]),
-                      'Theta = '+str(returnvalue[3]))
+            result = {'Price':returnvalue[0],
+                      'Delta':returnvalue[1],
+                      'Gamma':returnvalue[2],
+                      'Theta':returnvalue[3]}
                                
         return result                     
     
     
-    @timethis
+    @tm.timer
     def implied_trinomial_tree(
             self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
             steps_itt=None, option=None, output_flag=None, step=None, 
@@ -1084,12 +1018,12 @@ class Pricer():
                          * (optionvaluenode[i + 1]) 
                          + pd[n, i] * (optionvaluenode[i])) * df)
     
-            result = optionvaluenode[0] * 1000000         
+            result = optionvaluenode[0]          
                                
         return result    
     
     
-    @timethis
+    @tm.timer
     def explicit_finite_difference(
             self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
             nodes=None, option=None, american=None, timing=None, default=None):
@@ -1187,7 +1121,7 @@ class Pricer():
         return result          
     
     
-    @timethis
+    @tm.timer
     def implicit_finite_difference(
             self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
             steps=None, nodes=None, option=None, american=None, timing=None, 
@@ -1290,11 +1224,11 @@ class Pricer():
         return result   
     
     
-    @timethis
+    @tm.timer
     def explicit_finite_difference_lns(
             self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
-            steps=None, nodes=None, option=None, american=None, timing=None, 
-            default=None):
+            steps_itt=None, nodes=None, option=None, american=None, 
+            timing=None, default=None):
         """
         Explicit Finite Differences - rewrite BS-PDE in terms of ln(S)
 
@@ -1340,11 +1274,11 @@ class Pricer():
         # function so the parameters will already be provided.    
         if default:
             # Update pricing input parameters to default if not supplied
-            (S, K, T, r, q, sigma, steps, nodes, option, american, 
+            (S, K, T, r, q, sigma, steps_itt, nodes, option, american, 
              timing) = itemgetter(
-                'S', 'K', 'T', 'r', 'q', 'sigma', 'steps', 'nodes', 'option', 
-                'american', 'timing')(self._refresh_params_default(
-                    S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps=steps, 
+                'S', 'K', 'T', 'r', 'q', 'sigma', 'steps_itt', 'nodes', 
+                'option', 'american', 'timing')(self._refresh_params_default(
+                    S=S, K=K, T=T, r=r, q=q, sigma=sigma, steps_itt=steps_itt, 
                     nodes=nodes, option=option, american=american, 
                     timing=timing))
         
@@ -1354,7 +1288,7 @@ class Pricer():
             z = -1
         
         b = r - q
-        dt = T / steps
+        dt = T / steps_itt
         dx = sigma * np.sqrt(3 * dt)
         pu = 0.5 * dt * (((sigma / dx) ** 2) + (b - (sigma ** 2) / 2) / dx)
         pm = 1 - dt * ((sigma / dx) ** 2) - r * dt
@@ -1362,13 +1296,13 @@ class Pricer():
         St = np.zeros(nodes + 2)
         St[0] = S * np.exp(-nodes / 2 * dx)
         C = np.zeros((int(nodes / 2) + 1, nodes + 2), dtype='float')
-        C[steps, 0] = max(0, z * (St[0] - K))
+        C[steps_itt, 0] = max(0, z * (St[0] - K))
         
         for i in range(1, nodes + 1):
             St[i] = St[i - 1] * np.exp(dx) # Asset price at maturity
-            C[steps, i] = max(0, z * (St[i] - K) ) # At maturity
+            C[steps_itt, i] = max(0, z * (St[i] - K) ) # At maturity
         
-        for j in range(steps - 1, -1, -1):
+        for j in range(steps_itt - 1, -1, -1):
             for i in range(1, nodes):
                 C[j, i] = pu * C[j + 1, i + 1] + pm * C[j + 1, i] + (
                     pd * C[j + 1, i - 1])
@@ -1386,7 +1320,7 @@ class Pricer():
         return result   
     
     
-    @timethis
+    @tm.timer
     def crank_nicolson(
             self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
             steps=None, nodes=None, option=None, american=None, timing=None, 
@@ -1493,7 +1427,7 @@ class Pricer():
         return result   
     
     
-    @timethis
+    @tm.timer
     def european_monte_carlo(
             self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
             simulations=None, option=None, timing=None, default=None):
@@ -1567,7 +1501,7 @@ class Pricer():
         return result
     
     
-    @timethis
+    @tm.timer
     def european_monte_carlo_with_greeks(
             self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
             simulations=None, option=None, output_flag=None, timing=None, 
@@ -1611,7 +1545,7 @@ class Pricer():
                 'gamma' : Float; Option Gamma
                 'theta' : Float; Option Theta
                 'vega' : Float; Option Vega
-                'all' : Tuple; Option Price, Option Delta, Option 
+                'all' : Dict; Option Price, Option Delta, Option 
                                Gamma, Option Theta, Option Vega  
 
         """
@@ -1642,7 +1576,7 @@ class Pricer():
         val = 0
         deltasum = 0
         gammasum = 0
-        output = {}
+        output = np.zeros((5))
         
         for i in range(1, simulations + 1):
             St = S * np.exp(
@@ -1685,16 +1619,16 @@ class Pricer():
         if output_flag == 'vega':
             result = output[4]
         if output_flag == 'all':
-            result = ('Price = '+str(output[0]),
-                      'Delta = '+str(output[1]),
-                      'Gamma = '+str(output[2]),
-                      'Theta = '+str(output[3]),
-                      'Vega = '+str(output[4]))
+            result = {'Price':output[0],
+                      'Delta':output[1],
+                      'Gamma':output[2],
+                      'Theta':output[3],
+                      'Vega':output[4]}
                 
         return result
     
     
-    @timethis
+    @tm.timer
     def hull_white_87(self, S=None, K=None, T=None, r=None, q=None, sigma=None, 
                       vvol=None, option=None, timing=None, default=None):
         """
@@ -1794,7 +1728,7 @@ class Pricer():
         return result
 
 
-    @timethis
+    @tm.timer
     def hull_white_88(self, S=None, K=None, T=None, r=None, q=None, sig0=None, 
                       sigLR=None, halflife=None, vvol=None, rho=None, 
                       option=None, timing=None, default=None):
@@ -1949,11 +1883,8 @@ class Pricer():
 
 class ImpliedVol(Pricer):
     
-    def __init__(self):
-        super().__init__(self) # Inherit methods from Pricer class
 
-    
-    @timethis
+    @tm.timer
     def implied_vol_newton_raphson(self, S=None, K=None, T=None, r=None, 
                                    q=None, cm=None, epsilon=None, option=None, 
                                    timing=None, default=None):
@@ -2040,7 +1971,7 @@ class ImpliedVol(Pricer):
         return result
     
     
-    @timethis
+    @tm.timer
     def implied_vol_bisection(self, S=None, K=None, T=None, r=None, q=None, 
                               cm=None, epsilon=None, option=None, timing=None, 
                               default=None):
@@ -2136,7 +2067,7 @@ class ImpliedVol(Pricer):
         return result
    
     
-    @timethis
+    @tm.timer
     def implied_vol_naive(self, S=None, K=None, T=None, r=None, q=None, 
                           cm=None, epsilon=None, option=None, timing=None, 
                           default=None):
@@ -2240,7 +2171,7 @@ class ImpliedVol(Pricer):
         return result
     
     
-    @timethis
+    @tm.timer
     def implied_vol_naive_verbose(
             self, S=None, K=None, T=None, r=None, q=None, cm=None, 
             epsilon=None, option=None, timing=None, default=None):
@@ -2373,15 +2304,13 @@ class SABRVolatility(Pricer):
              
     """
     
-    def __init__(
-            self, 
-            sabr_df_dict=sabr_df_dict):
-        
-        # Inherit methods from Pricer class
-        super().__init__(self) 
+    def __init__(self):
         
         # Dictionary of default SABR parameters
-        self.sabr_df_dict = sabr_df_dict 
+        self.sabr_df_dict = mp.sabr_params_dict 
+        
+        # Inherit methods from Pricer class
+        Pricer().__init__() 
     
     
     def _refresh_sabr_params_default(self, **kwargs):
@@ -2423,7 +2352,7 @@ class SABRVolatility(Pricer):
         return kwargs        
     
     
-    @timethis
+    @tm.timer
     def calibrate(self, F=None, K=None, T=None, r=None, atmvol=None, beta=None, 
                   volvol=None, rho=None, option=None, timing=None, 
                   default=None, output_flag=None):
@@ -2467,9 +2396,9 @@ class SABRVolatility(Pricer):
         elif output_flag == 'price':
             return black_price
     
-        elif output_flag == 'both':
-            return ('Price = '+str(black_price),
-                    'Vol = '+str(black_vol))
+        elif output_flag == 'all':
+            return {'Price':black_price,
+                    'Vol':black_vol}
     
     
     def _alpha_sabr(self, F, K, T, beta, volvol, rho, alpha):
@@ -2639,7 +2568,7 @@ class Tools():
         self.timing = timing
    
    
-    @timethis
+    @tm.timer
     def cholesky_decomposition(self, R, timing=None):
         """
         Cholesky Decomposition.

@@ -1,0 +1,48 @@
+models_params_dict = {
+    'df_S':100,
+    'df_F':100,
+    'df_K':100,
+    'df_T':0.25,
+    'df_r':0.005,
+    'df_q':0,
+    'df_sigma':0.2,
+    'df_option':'call',
+    'df_steps':1000,
+    'df_steps_itt':10,
+    'df_nodes':100,
+    'df_vvol':0.5,
+    'df_simulations':10000,
+    'df_output_flag':'price',
+    'df_american':False,
+    'df_step':5,
+    'df_state':5,
+    'df_skew':0.0004,
+    'df_sig0':0.09,
+    'df_sigLR':0.0625, 
+    'df_halflife':0.1,
+    'df_rho':0,
+    'df_cm':5.0,
+    'df_epsilon':0.0001,
+    'df_refresh':True,
+    'df_timing':False,
+    'df_params_list':['S', 'F', 'K', 'T', 'r', 'q', 'sigma', 'option', 
+                      'steps', 'steps_itt', 'nodes', 'vvol', 
+                      'simulations', 'output_flag', 'american', 
+                      'step', 'state', 'skew', 'sig0', 'sigLR', 
+                      'halflife', 'rho', 'cm', 'epsilon', 'timing']
+    }
+
+
+sabr_params_dict = {
+    'df_F':100,
+    'df_K':70,
+    'df_T':0.5,
+    'df_r':0.05,
+    'df_atmvol':0.3, 
+    'df_beta':0.9999, 
+    'df_volvol':0.5, 
+    'df_rho':-0.4,
+    'df_option':'put',
+    'df_timing':False, 
+    'df_output_flag':'price'
+    }
