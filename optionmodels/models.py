@@ -16,11 +16,8 @@ class Pricer():
     def __init__(self):
         
         # Dictionary of default parameters
-        self.df_dict = mp.models_params_dict 
-                
-        # List of default parameters
-        self.df_params_list = self.df_dict['df_params_list'] 
-
+        self.models_params_dict = mp.models_params_dict 
+        
                
     def _refresh_params(self, **kwargs):
         """
@@ -47,7 +44,7 @@ class Pricer():
             if v is None:
                 
                 # Set it to the default value and assign to the object
-                v = self.df_dict['df_'+str(k)]
+                v = self.models_params_dict['df_'+str(k)]
                 self.__dict__[k] = v
             
             # If the value has been provided as an input, assign this 
@@ -85,7 +82,7 @@ class Pricer():
                 
                 # Set it to the default value and assign to the object 
                 # and to input dictionary
-                v = self.df_dict['df_'+str(k)]
+                v = self.models_params_dict['df_'+str(k)]
                 self.__dict__[k] = v
                 kwargs[k] = v 
             
@@ -2307,7 +2304,7 @@ class SABRVolatility(Pricer):
     def __init__(self):
         
         # Dictionary of default SABR parameters
-        self.sabr_df_dict = mp.sabr_params_dict 
+        self.sabr_params_dict = mp.sabr_params_dict 
         
         # Inherit methods from Pricer class
         Pricer().__init__() 
@@ -2340,7 +2337,7 @@ class SABRVolatility(Pricer):
                 
                 # Set it to the default value and assign to the object 
                 # and to input dictionary
-                v = self.sabr_df_dict['df_'+str(k)]
+                v = self.sabr_params_dict['df_'+str(k)]
                 self.__dict__[k] = v
                 kwargs[k] = v 
             
