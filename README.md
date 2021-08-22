@@ -25,24 +25,15 @@ $ activate optmods
 ```
 Install Python
 ```
-(optmods) $ conda install python
+(optmods) $ conda install python==3.9
 ```
 Install Spyder
 ```
-(optmods) $ conda install spyder=4
+(optmods) $ conda install spyder
 ```
 Install package
 ```
 (optmods) $ pip install optionmodels
-```
-
-&nbsp;
-
-### Setup
-Import models
-
-```
-import optionmodels.models as mod
 ```
 
 &nbsp;
@@ -62,19 +53,28 @@ import optionmodels.models as mod
 
 &nbsp;
 
+### Setup
+Import models
+
+```
+from optionmodels.models import Pricer
+```
+
+&nbsp;
+
 Initialise a Pricer object
 ```
-opt = mod.Pricer()
+opt = Pricer()
 ```
 Calculate option price
 ```
-opt.black_scholes_merton(**kwargs)
+opt.price(option_method='bsm')
 ```
 ```
-opt.cox_ross_rubinstein_binomial(timing=True, steps=1000, **kwargs)
+opt.price(option_method='crr', timing=True, steps=1000)
 ```
 ```
-opt.european_monte_carlo(simulations=10000, **kwargs)
+opt.price(option_method='emc', simulations=10000)
 ```
 
 &nbsp;
@@ -86,16 +86,16 @@ opt.european_monte_carlo(simulations=10000, **kwargs)
 
 &nbsp;
 
-Initialise an ImpliedVol object
+Initialise a Pricer object
 ```
-imp = mod.ImpliedVol()
+imp = Pricer()
 ```
 Extract implied volatility
 ```
-imp.implied_vol_newton_raphson(timing=True, **kwargs)
+imp.impliedvol(timing=True)
 ```
 ```
-imp.implied_vol_bisection(**kwargs)
+imp.impliedvol(vol_method='bisection')
 ```
 
 &nbsp;
@@ -106,11 +106,11 @@ imp.implied_vol_bisection(**kwargs)
 
 Initialise a SABRVolatility object
 ```
-sabr = mod.SABRVolatility()
+sabr = SABRVolatility()
 ```
 Calibrate the model and return price and / or volatility
 ```
-sabr.calibrate(**kwargs)
+sabr.calibrate()
 ```
 
 &nbsp;
