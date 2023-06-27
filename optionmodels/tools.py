@@ -14,7 +14,7 @@ class Tools():
     """
 
     @staticmethod
-    def cholesky_decomposition(matrix):
+    def cholesky_decomposition(matrix: np.ndarray) -> np.ndarray:
         """
         Cholesky Decomposition.
         Return M in M * M.T = matrix where matrix is a symmetric positive
@@ -57,7 +57,7 @@ class Tools():
 
 
     @staticmethod
-    def n_choose_r(n, r):
+    def n_choose_r(n: int, r: int) -> int:
         """
         Binomial Coefficients. n choose r
         Number of ways to choose an (unordered) subset of r elements
