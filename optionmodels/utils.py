@@ -5,6 +5,7 @@ Utility functions for refreshing parameters and timing
 
 import copy
 import time
+from typing import Callable
 from functools import wraps
 from optionmodels.models_params import models_params_dict, sabr_params_dict
 
@@ -15,7 +16,7 @@ class Utils():
 
     """
     @staticmethod
-    def timer(func):
+    def timer(func: Callable) -> Callable:
         """
         Add timing to a function
 
@@ -45,7 +46,7 @@ class Utils():
 
 
     @staticmethod
-    def init_params(inputs):
+    def init_params(inputs: dict) -> dict:
         """
         Initialise parameter dictionary
         Parameters
@@ -70,7 +71,7 @@ class Utils():
 
 
     @staticmethod
-    def init_sabr_params(inputs):
+    def init_sabr_params(inputs: dict) -> dict:
         """
         Initialise parameter dictionary
         Parameters
