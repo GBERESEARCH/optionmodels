@@ -17,9 +17,9 @@ $ pip install optionmodels
 
 Install in a new environment using Python venv:
 
-Create base environment of Python 3.11
+Create base environment of Python 3.13
 ```
-$ py -3.11 -m venv .venv
+$ py -3.13 -m venv .venv
 ```
 Activate new environment
 ```
@@ -50,7 +50,7 @@ $ activate optmods
 ```
 Install Python
 ```
-(optmods) $ conda install python==3.9
+(optmods) $ conda install python==3.13
 ```
 Install Spyder
 ```
@@ -96,7 +96,7 @@ Calculate option price
 opt.price(option_method='bsm')
 ```
 ```
-opt.price(option_method='crr', timing=True, steps=1000)
+opt.price(option_method='crr_bin', timing=True, steps=1000)
 ```
 ```
 opt.price(option_method='emc', simulations=10000)
