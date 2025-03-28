@@ -40,29 +40,6 @@ $ (.venv) python -m pip install optionmodels
 
 &nbsp;
 
-Or to install in new environment using anaconda:
-```
-$ conda create --name optmods
-```
-Activate new environment
-```
-$ activate optmods
-```
-Install Python
-```
-(optmods) $ conda install python==3.13
-```
-Install Spyder
-```
-(optmods) $ conda install spyder
-```
-Install package
-```
-(optmods) $ pip install optionmodels
-```
-
-&nbsp;
-
 ### Option pricing models:
   - Black-Scholes-Merton (1973)
   - Black (1976)
