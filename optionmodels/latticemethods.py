@@ -155,18 +155,18 @@ class LatticeMethods():
             optionvalue[i] = max(
                 0, z * (S * (u ** i) * (d ** (steps - i)) - K))
 
-
         for j in range(steps - 1, -1, -1):
             for i in range(j + 1):
                 if american:
-                    optionvalue[i] = (
-                        (p * optionvalue[i + 1])
-                        + ((1 - p) * optionvalue[i])) * df
-                else:
                     optionvalue[i] = max(
                         (z * (S * (u ** i) * (d ** (j - i)) - K)),
                         ((p * optionvalue[i + 1])
                          + ((1 - p) * optionvalue[i])) * df)
+                else:
+                    optionvalue[i] = (
+                        (p * optionvalue[i + 1])
+                        + ((1 - p) * optionvalue[i])) * df
+
 
             if j == 2:
                 returnvalue[2] = (((optionvalue[2] - optionvalue[1])
@@ -280,24 +280,22 @@ class LatticeMethods():
         d = (np.exp(b * dt) - p * u) / (1 - p)
         df = np.exp(-r * dt)
 
-        optionvalue = np.zeros((steps + 1))
         returnvalue = np.zeros((4))
 
-        for i in range(steps + 1):
-            optionvalue[i] = max(0, z * (S * (u ** i) * (
-                d ** (steps - i)) - K))
+        # Asset prices and option values at expiry for nodes 0 to steps
+        nodes = np.arange(steps + 1)
+        assetprice = S * (u ** nodes) * (d ** (steps - nodes))
+        optionvalue = np.maximum(0, z * (assetprice - K))
 
+        # Step back through the tree; at step j the arrays hold nodes 0 to j
         for j in range(steps - 1, -1, -1):
-            for i in range(j + 1):
-                if american:
-                    optionvalue[i] = (
-                        (p * optionvalue[i + 1])
-                        + ((1 - p) * optionvalue[i])) * df
-                else:
-                    optionvalue[i] = max(
-                        (z * (S * (u ** i) * (d ** (j - i)) - K)),
-                        ((p * optionvalue[i + 1])
-                         + ((1 - p) * optionvalue[i])) * df)
+            optionvalue = (
+                (p * optionvalue[1:j + 2])
+                + ((1 - p) * optionvalue[0:j + 1])) * df
+
+            if american:
+                assetprice = assetprice[0:j + 1] / d
+                optionvalue = np.maximum(optionvalue, z * (assetprice - K))
 
             if j == 2:
                 returnvalue[2] = (

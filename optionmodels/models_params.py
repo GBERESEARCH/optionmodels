@@ -86,7 +86,10 @@ models_params_dict = {
         'nr':'implied_vol_newton_raphson',
         'bisection':'implied_vol_bisection',
         'naive':'implied_vol_naive',
-        'naive_verbose':'implied_vol_naive_verbose'
+        'naive_verbose':'implied_vol_naive_verbose',
+        'jaeckel':'implied_vol_jaeckel',
+        'inverse_gauss':'implied_vol_inverse_gauss',
+        'lattice':'implied_vol_lattice'
         },
 
     'params_list':[
